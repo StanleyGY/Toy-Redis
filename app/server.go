@@ -1,44 +1,76 @@
 package main
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"net"
-	"os"
 )
 
-func main() {
+func processIncomingRequest(epoller *Epoller, conn net.Conn) {
+	buf := make([]byte, 1024)
+
+	// Read data from connetion
+	_, err := conn.Read(buf)
+	if err != nil {
+		if err == io.EOF {
+			err := epoller.Remove(conn)
+			if err != nil {
+				log.Println("Error closing connection: ", err.Error())
+			} else {
+				log.Println("Good bye!")
+			}
+			return
+		}
+		log.Println("Error reading from connection: ", err.Error())
+	}
+
+	// Process event
+	output := []byte("+PONG\r\n")
+	conn.Write(output)
+}
+
+func startServer() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
-		os.Exit(1)
+		panic(err)
 	}
 
-	conn, err := l.Accept()
+	epoller, err := MakeEpoller()
 	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+		panic(err)
 	}
 
-	defer conn.Close()
+	// Start a separate go routine to listen for events that are ready for processing
+	go func() {
+		for {
+			conns, err := epoller.Wait()
 
-	for {
-		// Reads input from connection
-		buf := make([]byte, 1024)
-
-		_, err := conn.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				break
+			if err != nil {
+				log.Println("Error epoller waiting for events: ", err.Error())
+				continue
 			}
-			fmt.Println("Error reading from connection: ", err.Error())
-			os.Exit(1)
+			for _, conn := range conns {
+				processIncomingRequest(epoller, conn)
+			}
+		}
+	}()
+
+	// Infinite loop for accepting connetions and adding to epoll queue
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Println("Error accepting connection: ", err.Error())
+			continue
 		}
 
-		// inputs := string(buf)
-		// fmt.Printf("%d %s\n", n, inputs)
-
-		output := []byte("+PONG\r\n")
-		conn.Write(output)
+		err = epoller.AddConn(conn)
+		if err != nil {
+			log.Println("Error accepting connection: ", err.Error())
+			continue
+		}
 	}
+}
+
+func main() {
+	startServer()
 }
