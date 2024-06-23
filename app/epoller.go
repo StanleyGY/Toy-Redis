@@ -100,10 +100,10 @@ func MakeEpoller() (*Epoller, error) {
 		return nil, err
 	}
 
-	epollInfo := epollInfo{
+	epollInfo := &epollInfo{
 		Conns: make(map[int]net.Conn),
 		Fd:    fd,
 		Latch: sync.Mutex{},
 	}
-	return &Epoller{epoll: &epollInfo}, nil
+	return &Epoller{epoll: epollInfo}, nil
 }

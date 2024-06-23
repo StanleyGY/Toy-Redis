@@ -4,12 +4,14 @@ import (
 	"io"
 	"log"
 	"net"
+
+	"github.com/stanleygy/toy-redis/app/cmdexec"
+	"github.com/stanleygy/toy-redis/app/resp"
 )
 
 func processIncomingRequest(epoller *Epoller, conn net.Conn) {
 	buf := make([]byte, 1024)
 
-	// Read data from connetion
 	_, err := conn.Read(buf)
 	if err != nil {
 		if err == io.EOF {
@@ -24,9 +26,17 @@ func processIncomingRequest(epoller *Epoller, conn net.Conn) {
 		log.Println("Error reading from connection: ", err.Error())
 	}
 
-	// Process event
-	output := []byte("+PONG\r\n")
-	conn.Write(output)
+	inResp, err := resp.Parse(buf)
+	if err != nil {
+		log.Println("Error parsing Resp: ", err.Error())
+	}
+
+	outResp, err := cmdexec.Execute(inResp)
+	if err != nil {
+		log.Println("Error executing Resp: ", err.Error())
+	}
+
+	conn.Write(outResp.ToByteArray())
 }
 
 func startServer() {

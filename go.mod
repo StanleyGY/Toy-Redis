@@ -1,4 +1,4 @@
-module github.com/codecrafters-io/redis-starter-go
+module github.com/stanleygy/toy-redis
 
 go 1.22
 
