@@ -2,7 +2,9 @@ package cmdexec
 
 import (
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/stanleygy/toy-redis/app/resp"
 )
@@ -12,7 +14,7 @@ type CmdExecutor interface {
 }
 
 /*
- * syntax: PING [message]
+ * syntax: PING
  */
 type PingCmdExecutor struct{}
 
@@ -33,16 +35,72 @@ func (EchoCmdExecutor) Execute(args []*resp.RespValue) (*resp.RespValue, error) 
 }
 
 /*
- * syntax: SET key value [NX | XX] [GET] [EX seconds | PX milliseconds |
- *  EXAT unix-time-seconds | PXAT unix-time-milliseconds | KEEPTTL]
+ * syntax: SET key value [NX] [EX seconds | PX milliseconds]
  */
 type SetCmdExecutor struct{}
 
-func (SetCmdExecutor) Execute(args []*resp.RespValue) (*resp.RespValue, error) {
+func (e SetCmdExecutor) execute(key string, val string, nxFlag bool, expiry bool, ttl time.Time) bool {
+	if nxFlag {
+		val, found := db.KvStore[key]
+		if found && val.WillExpire && val.ExpireTime.Compare(time.Now()) == -1 {
+			delete(db.KvStore, key)
+			found = false
+		}
+		if found {
+			return false
+		}
+	}
+
+	kvStoreVal := &KvStoreValue{
+		Value: val,
+	}
+	if expiry {
+		kvStoreVal.ExpireTime = ttl
+		kvStoreVal.WillExpire = true
+	}
+	db.KvStore[key] = kvStoreVal
+	return true
+}
+
+func (e SetCmdExecutor) Execute(args []*resp.RespValue) (*resp.RespValue, error) {
 	key := args[0].BulkStr
 	val := args[1].BulkStr
-	db.KvStore[key] = val
-	return &resp.RespValue{DataType: resp.TypeSimpleStrings, SimpleStr: "OK"}, nil
+	nxFlag := false
+	expiry := false
+
+	var ttl time.Time
+
+	for i := 2; i < len(args); i++ {
+		modifier := strings.ToUpper(args[i].BulkStr)
+
+		if modifier == "NX" {
+			// NX - only set the key if it does not already exist
+			nxFlag = true
+		} else if modifier == "PX" || modifier == "EX" {
+			// PX milliseconds - set the specified expire time in ms (a positive integer)
+			// EX milliseconds - set the specified expire time in secs (a positive integer)
+			expireTime, err := strconv.Atoi(args[i+1].BulkStr)
+			if err != nil {
+				return nil, err
+			}
+			if expireTime < 0 {
+				return nil, errors.New("ttl must be a positive integer")
+			}
+
+			expiry = true
+			if modifier == "PX" {
+				ttl = time.Now().Add(time.Millisecond * time.Duration(expireTime))
+			} else {
+				ttl = time.Now().Add(time.Second * time.Duration(expireTime))
+			}
+
+			i++
+		}
+	}
+	if e.execute(key, val, nxFlag, expiry, ttl) {
+		return &resp.RespValue{DataType: resp.TypeSimpleStrings, SimpleStr: "OK"}, nil
+	}
+	return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
 }
 
 /*
@@ -52,12 +110,17 @@ type GetCmdExecutor struct{}
 
 func (GetCmdExecutor) Execute(args []*resp.RespValue) (*resp.RespValue, error) {
 	key := args[0].BulkStr
-	val, ok := db.KvStore[key]
+	val, found := db.KvStore[key]
 
-	if ok {
-		return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: val}, nil
+	// Check expiry
+	if found && val.WillExpire && val.ExpireTime.Compare(time.Now()) == -1 {
+		delete(db.KvStore, key)
+		found = false
 	}
-	return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	if !found {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: val.Value}, nil
 }
 
 var CmdLookupTable = map[string]CmdExecutor{
