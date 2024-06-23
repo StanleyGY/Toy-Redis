@@ -45,6 +45,8 @@ func startServer() {
 		panic(err)
 	}
 
+	cmdexec.InitRedisDb()
+
 	epoller, err := MakeEpoller()
 	if err != nil {
 		panic(err)
