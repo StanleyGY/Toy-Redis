@@ -48,9 +48,9 @@ func (e SetCmdExecutor) parseSetCmdArgs(args []*resp.RespValue, key *string, val
 }
 
 func (e SetCmdExecutor) doesKeyExistOrUnexpire(key string) bool {
-	val, found := db.KvStore[key]
+	val, found := db.DictStore[key]
 	if found && val.WillExpire && val.ExpireTime.Compare(time.Now()) == -1 {
-		delete(db.KvStore, key)
+		delete(db.DictStore, key)
 		found = false
 	}
 	return found
@@ -60,14 +60,14 @@ func (e SetCmdExecutor) set(key string, val string, nxFlag bool, expiry bool, tt
 	if nxFlag && e.doesKeyExistOrUnexpire(key) {
 		return false
 	}
-	kvStoreVal := &KvStoreValue{
+	kvStoreVal := &DictStoreValue{
 		Value: val,
 	}
 	if expiry {
 		kvStoreVal.ExpireTime = ttl
 		kvStoreVal.WillExpire = true
 	}
-	db.KvStore[key] = kvStoreVal
+	db.DictStore[key] = kvStoreVal
 	return true
 }
 
@@ -91,7 +91,7 @@ func (e SetCmdExecutor) executeGetCmd(cmdArgs []*resp.RespValue) (*resp.RespValu
 	if !e.doesKeyExistOrUnexpire(key) {
 		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
 	}
-	val := db.KvStore[key]
+	val := db.DictStore[key]
 	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: val.Value}, nil
 }
 
