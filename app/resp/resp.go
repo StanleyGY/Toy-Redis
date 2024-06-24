@@ -24,9 +24,10 @@ type RespValue struct {
 
 func (rv RespValue) ToByteArray() []byte {
 	var buf bytes.Buffer
-	buf.WriteString(rv.DataType)
 
+	buf.WriteString(rv.DataType)
 	switch rv.DataType {
+	case TypeSimpleErrors:
 	case TypeSimpleStrings:
 		buf.WriteString(rv.SimpleStr)
 	case TypeBulkStrings:
@@ -40,4 +41,11 @@ func (rv RespValue) ToByteArray() []byte {
 	}
 	buf.WriteString("\r\n")
 	return buf.Bytes()
+}
+
+func MakeErorr(msg string) *RespValue {
+	return &RespValue{
+		DataType:  TypeSimpleErrors,
+		SimpleStr: msg,
+	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stanleygy/toy-redis/app/cmdexec"
 	"github.com/stanleygy/toy-redis/app/parser"
+	"github.com/stanleygy/toy-redis/app/resp"
 )
 
 func processIncomingRequest(epoller *Epoller, conn net.Conn) {
@@ -26,18 +27,23 @@ func processIncomingRequest(epoller *Epoller, conn net.Conn) {
 		log.Println("Error reading from connection: ", err.Error())
 	}
 
+	var outResp *resp.RespValue
+
 	inResp, err := parser.Parse(buf)
 	if err != nil {
+		outResp = resp.MakeErorr(err.Error())
 		log.Println("Error parsing Resp: ", err.Error())
-		return
+		goto netwrite
 	}
 
-	outResp, err := cmdexec.Execute(inResp)
+	outResp, err = cmdexec.Execute(inResp)
 	if err != nil {
+		outResp = resp.MakeErorr(err.Error())
 		log.Println("Error executing Resp: ", err.Error())
-		return
+		goto netwrite
 	}
 
+netwrite:
 	conn.Write(outResp.ToByteArray())
 }
 
