@@ -1,47 +1,12 @@
-package resp
+package parser
 
 import (
 	"bytes"
 	"errors"
 	"strconv"
+
+	"github.com/stanleygy/toy-redis/app/resp"
 )
-
-const (
-	TypeSimpleStrings = "+"
-	TypeSimpleErrors  = "-"
-	TypeIntegers      = ":"
-	TypeBulkStrings   = "$"
-	TypeArrays        = "*"
-)
-
-type RespValue struct {
-	DataType      string
-	SimpleStr     string
-	BulkStr       string
-	IsNullBulkStr bool
-	Int           int
-	Array         []*RespValue
-}
-
-func (rv RespValue) ToByteArray() []byte {
-	var buf bytes.Buffer
-	buf.WriteString(rv.DataType)
-
-	switch rv.DataType {
-	case TypeSimpleStrings:
-		buf.WriteString(rv.SimpleStr)
-	case TypeBulkStrings:
-		if rv.IsNullBulkStr {
-			buf.WriteString(strconv.Itoa(-1))
-		} else {
-			buf.WriteString(strconv.Itoa(len(rv.BulkStr)))
-			buf.WriteString("\r\n")
-			buf.WriteString(rv.BulkStr)
-		}
-	}
-	buf.WriteString("\r\n")
-	return buf.Bytes()
-}
 
 func parseBulkString(r *bytes.Reader) (string, error) {
 	expectedLenByte, err := r.ReadByte()
@@ -72,7 +37,7 @@ func parseBulkString(r *bytes.Reader) (string, error) {
 	return string(str), nil
 }
 
-func parseArray(r *bytes.Reader) ([]*RespValue, error) {
+func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 	// A sample array: "ECHO hey" is serialized to "*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"
 	expectedLenByte, err := r.ReadByte()
 	if err != nil {
@@ -87,7 +52,7 @@ func parseArray(r *bytes.Reader) ([]*RespValue, error) {
 	r.ReadByte()
 	r.ReadByte()
 
-	vals := make([]*RespValue, expectedLen)
+	vals := make([]*resp.RespValue, expectedLen)
 	for i := 0; i < expectedLen; i++ {
 		vals[i], err = parseType(r)
 		if err != nil {
@@ -97,13 +62,13 @@ func parseArray(r *bytes.Reader) ([]*RespValue, error) {
 	return vals, nil
 }
 
-func parseType(r *bytes.Reader) (*RespValue, error) {
+func parseType(r *bytes.Reader) (*resp.RespValue, error) {
 	t, err := r.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
-	var val RespValue
+	var val resp.RespValue
 	val.DataType = string(t)
 
 	switch t {
@@ -117,7 +82,7 @@ func parseType(r *bytes.Reader) (*RespValue, error) {
 	return &val, err
 }
 
-func Parse(buf []byte) (*RespValue, error) {
+func Parse(buf []byte) (*resp.RespValue, error) {
 	r := bytes.NewReader(buf)
 	return parseType(r)
 }
