@@ -1,7 +1,6 @@
 package cmdexec
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +31,7 @@ func (e SetCmdExecutor) parseSetCmdArgs(args []*resp.RespValue, key *string, val
 				return err
 			}
 			if expireTime < 0 {
-				return errors.New("ttl must be a positive integer")
+				return ErrInvalidArgs
 			}
 
 			*expiry = true

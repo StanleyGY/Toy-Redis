@@ -8,55 +8,60 @@ import (
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
+var (
+	ErrInvalidArgs = errors.New("invalid args")
+)
+
+func readUntilLineBreak(r *bytes.Reader) ([]byte, error) {
+	buf := make([]byte, 0)
+
+	for {
+		c, err := r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if c == '\r' {
+			r.ReadByte()
+			break
+		}
+		buf = append(buf, c)
+	}
+	return buf, nil
+}
+
 func parseBulkString(r *bytes.Reader) (string, error) {
-	expectedLenByte, err := r.ReadByte()
-	if err != nil {
-		return "", nil
-	}
-	expectedLen, err := strconv.Atoi(string(expectedLenByte))
-	if err != nil {
-		return "", nil
-	}
-
-	// Consume \r\n
-	r.ReadByte()
-	r.ReadByte()
-
-	// Consume string parameters
-	str := make([]byte, expectedLen)
-	actualLen, err := r.Read(str)
+	// Get length of string
+	rawExpectedNumBytes, err := readUntilLineBreak(r)
 	if err != nil {
 		return "", err
 	}
-	if actualLen != int(expectedLen) {
-		return "", errors.New("failed to parse BulkString type: length doesn't match")
+	expectedNumBytes, err := strconv.Atoi(string(rawExpectedNumBytes))
+	if err != nil {
+		return "", err
 	}
-
-	r.ReadByte()
-	r.ReadByte()
-	return string(str), nil
+	// Get actual string
+	rawStr, err := readUntilLineBreak(r)
+	if err != nil {
+		return "", err
+	}
+	if len(rawStr) != expectedNumBytes {
+		return "", ErrInvalidArgs
+	}
+	return string(rawStr), nil
 }
 
 func parseInteger(r *bytes.Reader) (int, error) {
 	// Format :[<+|->]<value>\r\n
-	rawNum := make([]rune, 0)
-	for {
-		c, err := r.ReadByte()
-		if err != nil {
-			return 0, err
-		}
-		if c == '\r' {
-			break
-		}
-		rawNum = append(rawNum, rune(c))
+	rawNum, err := readUntilLineBreak(r)
+	if err != nil {
+		return 0, err
 	}
-	r.ReadByte()
 	return strconv.Atoi(string(rawNum))
 }
 
 func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 	// A sample array: "ECHO hey" is serialized to "*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"
-	expectedLenByte, err := r.ReadByte()
+	expectedLenByte, err := readUntilLineBreak(r)
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +69,6 @@ func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Consume \r\n
-	r.ReadByte()
-	r.ReadByte()
 
 	vals := make([]*resp.RespValue, expectedLen)
 	for i := 0; i < expectedLen; i++ {
@@ -90,19 +91,16 @@ func parseType(r *bytes.Reader) (*resp.RespValue, error) {
 
 	switch val.DataType {
 	case resp.TypeBulkStrings:
-		// Type: Bulk String
 		val.BulkStr, err = parseBulkString(r)
 	case resp.TypeIntegers:
 		val.Int, err = parseInteger(r)
 	case resp.TypeArrays:
-		// Type: Array
 		val.Array, err = parseArray(r)
 	}
 	return &val, err
 }
 
 func Parse(buf []byte) (*resp.RespValue, error) {
-	// fmt.Println("cmd ", string(buf))
 	r := bytes.NewReader(buf)
 	return parseType(r)
 }

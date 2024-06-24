@@ -44,16 +44,16 @@ func (e ZsetCmdExecutor) executeZAddCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
 		return nil, err
 	}
 
-	// Check if a new key is requested, so a new skip list is created
-	sset, found := db.SortedSetStore[key]
+	// If a new key is requested, a new skip list will be created
+	sortedSet, found := db.SortedSetStore[key]
 	if !found {
 		db.SortedSetStore[key] = MakeSkipList(time.Now().Unix())
-		sset = db.SortedSetStore[key]
+		sortedSet = db.SortedSetStore[key]
 	}
 
 	numAdded := 0
 	for i := 0; i < len(members); i++ {
-		if sset.Add(members[i], scores[i], nxFlag) {
+		if sortedSet.Add(members[i], scores[i], nxFlag) {
 			numAdded++
 		}
 	}
@@ -67,12 +67,43 @@ func (e ZsetCmdExecutor) executeZAddCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
  * syntax: ZCOUNT key min max
  * syntax: ZRANGE key start stop [REV] [LIMIT offset count]  [WITHSCORES]
  */
+func (e ZsetCmdExecutor) parseZRemCmdArgs(cmdArgs []*resp.RespValue, key *string, members *[]string) {
+	*key = cmdArgs[0].BulkStr
+	for i := 1; i < len(cmdArgs); i++ {
+		*members = append(*members, cmdArgs[i].BulkStr)
+	}
+}
+
+func (e ZsetCmdExecutor) executeZRemCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	var (
+		key     string
+		members []string = make([]string, 0)
+	)
+	e.parseZRemCmdArgs(cmdArgs, &key, &members)
+
+	// Check if the key exists
+	sortedSet, found := db.SortedSetStore[key]
+	if !found {
+		db.SortedSetStore[key] = MakeSkipList(time.Now().Unix())
+		sortedSet = db.SortedSetStore[key]
+	}
+
+	numRemoved := 0
+	for i := 0; i < len(members); i++ {
+		if sortedSet.Remove(members[i]) {
+			numRemoved++
+		}
+	}
+
+	return &resp.RespValue{DataType: resp.TypeIntegers, Int: numRemoved}, nil
+}
 
 func (e ZsetCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
 	switch cmdName {
 	case "ZADD":
 		return e.executeZAddCmd(cmdArgs)
 	case "ZREM":
+		return e.executeZRemCmd(cmdArgs)
 	}
 	return nil, nil
 }

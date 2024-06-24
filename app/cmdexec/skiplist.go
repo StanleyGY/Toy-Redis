@@ -76,10 +76,10 @@ func (l *SkipList) GetScore(member string) int {
 	return 0
 }
 
-func (l *SkipList) Remove(member string) {
+func (l *SkipList) Remove(member string) bool {
 	curr, found := l.MemberMap[member]
 	if !found {
-		return
+		return false
 	}
 
 	for i := 0; i < curr.GetHeight(); i++ {
@@ -102,6 +102,7 @@ func (l *SkipList) Remove(member string) {
 
 	l.NumElems--
 	delete(l.MemberMap, member)
+	return true
 }
 
 func (l *SkipList) findInsertion(score int, height int) []*Node {

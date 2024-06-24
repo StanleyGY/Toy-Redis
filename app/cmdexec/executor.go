@@ -7,6 +7,10 @@ import (
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
+var (
+	ErrInvalidArgs = errors.New("invalid args")
+)
+
 type CmdExecutor interface {
 	Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error)
 }
@@ -18,6 +22,7 @@ var CmdLookupTable = map[string]CmdExecutor{
 	"SET":     &SetCmdExecutor{},
 	"GET":     &SetCmdExecutor{},
 	"ZADD":    &ZsetCmdExecutor{},
+	"ZREM":    &ZsetCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {
@@ -46,7 +51,7 @@ type EchoCmdExecutor struct{}
 
 func (EchoCmdExecutor) Execute(_ string, args []*resp.RespValue) (*resp.RespValue, error) {
 	if len(args) == 0 {
-		return nil, errors.New("echo: missing arg")
+		return nil, ErrInvalidArgs
 	}
 	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: args[0].BulkStr}, nil
 }
