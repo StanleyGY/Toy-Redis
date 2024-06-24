@@ -63,7 +63,6 @@ func (e ZsetCmdExecutor) executeZAddCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
 
 /*
  * syntax: ZREM key member [member ...]
- * syntax: ZSCORE key member
  * syntax: ZCOUNT key min max
  * syntax: ZRANGE key start stop [REV] [LIMIT offset count]  [WITHSCORES]
  */
@@ -84,8 +83,7 @@ func (e ZsetCmdExecutor) executeZRemCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
 	// Check if the key exists
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		db.SortedSetStore[key] = MakeSkipList(time.Now().Unix())
-		sortedSet = db.SortedSetStore[key]
+		return &resp.RespValue{DataType: resp.TypeIntegers, Int: 0}, nil
 	}
 
 	numRemoved := 0
@@ -98,8 +96,42 @@ func (e ZsetCmdExecutor) executeZRemCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
 	return &resp.RespValue{DataType: resp.TypeIntegers, Int: numRemoved}, nil
 }
 
+/*
+ * syntax: ZSCORE key member
+ */
+func (e ZsetCmdExecutor) parseZScoreCmdArgs(cmdArgs []*resp.RespValue, key *string, member *string) error {
+	if len(cmdArgs) != 2 {
+		return ErrInvalidArgs
+	}
+	*key = cmdArgs[0].BulkStr
+	*member = cmdArgs[1].BulkStr
+	return nil
+}
+
+func (e ZsetCmdExecutor) executeZScoreCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	var (
+		key    string
+		member string
+	)
+
+	err := e.parseZScoreCmdArgs(cmdArgs, &key, &member)
+	if err != nil {
+		return nil, err
+	}
+
+	sortedSet, found := db.SortedSetStore[key]
+	if !found {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+
+	score := sortedSet.GetScore(member)
+	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: strconv.Itoa(score)}, nil
+}
+
 func (e ZsetCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
 	switch cmdName {
+	case "ZSCORE":
+		return e.executeZScoreCmd(cmdArgs)
 	case "ZADD":
 		return e.executeZAddCmd(cmdArgs)
 	case "ZREM":

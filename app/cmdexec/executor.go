@@ -23,6 +23,7 @@ var CmdLookupTable = map[string]CmdExecutor{
 	"GET":     &SetCmdExecutor{},
 	"ZADD":    &ZsetCmdExecutor{},
 	"ZREM":    &ZsetCmdExecutor{},
+	"ZSCORE":  &ZsetCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {
