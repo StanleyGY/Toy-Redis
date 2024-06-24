@@ -18,7 +18,7 @@ func randString(n int) string {
 }
 
 func TestAddRemove(t *testing.T) {
-	numElems := 100
+	numElems := 100000
 	members := make(map[string]int)
 
 	for i := 0; i < numElems; i++ {
@@ -30,7 +30,7 @@ func TestAddRemove(t *testing.T) {
 
 	// Check `Add`
 	for m, score := range members {
-		sl.Add(m, score)
+		sl.Add(m, score, false)
 	}
 	assert.Equal(t, numElems, sl.Size())
 

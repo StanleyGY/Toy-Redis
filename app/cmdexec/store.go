@@ -17,7 +17,7 @@ var db *RedisDb
 
 func InitRedisDb() {
 	db = &RedisDb{
-		DictStore: make(map[string]*DictStoreValue),
-		// SortedSetStore: &SkipList{},
+		DictStore:      make(map[string]*DictStoreValue),
+		SortedSetStore: make(map[string]*SkipList),
 	}
 }

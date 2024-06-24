@@ -30,6 +30,8 @@ func (rv RespValue) ToByteArray() []byte {
 	case TypeSimpleErrors:
 	case TypeSimpleStrings:
 		buf.WriteString(rv.SimpleStr)
+	case TypeIntegers:
+		buf.WriteString(strconv.Itoa(rv.Int))
 	case TypeBulkStrings:
 		if rv.IsNullBulkStr {
 			buf.WriteString(strconv.Itoa(-1))

@@ -37,6 +37,23 @@ func parseBulkString(r *bytes.Reader) (string, error) {
 	return string(str), nil
 }
 
+func parseInteger(r *bytes.Reader) (int, error) {
+	// Format :[<+|->]<value>\r\n
+	rawNum := make([]rune, 0)
+	for {
+		c, err := r.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		if c == '\r' {
+			break
+		}
+		rawNum = append(rawNum, rune(c))
+	}
+	r.ReadByte()
+	return strconv.Atoi(string(rawNum))
+}
+
 func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 	// A sample array: "ECHO hey" is serialized to "*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"
 	expectedLenByte, err := r.ReadByte()
@@ -71,11 +88,13 @@ func parseType(r *bytes.Reader) (*resp.RespValue, error) {
 	var val resp.RespValue
 	val.DataType = string(t)
 
-	switch t {
-	case '$':
+	switch val.DataType {
+	case resp.TypeBulkStrings:
 		// Type: Bulk String
 		val.BulkStr, err = parseBulkString(r)
-	case '*':
+	case resp.TypeIntegers:
+		val.Int, err = parseInteger(r)
+	case resp.TypeArrays:
 		// Type: Array
 		val.Array, err = parseArray(r)
 	}
@@ -83,6 +102,7 @@ func parseType(r *bytes.Reader) (*resp.RespValue, error) {
 }
 
 func Parse(buf []byte) (*resp.RespValue, error) {
+	// fmt.Println("cmd ", string(buf))
 	r := bytes.NewReader(buf)
 	return parseType(r)
 }

@@ -17,6 +17,7 @@ var CmdLookupTable = map[string]CmdExecutor{
 	"ECHO":    &EchoCmdExecutor{},
 	"SET":     &SetCmdExecutor{},
 	"GET":     &SetCmdExecutor{},
+	"ZADD":    &ZsetCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {
@@ -25,7 +26,7 @@ func Execute(val *resp.RespValue) (*resp.RespValue, error) {
 	if cmd == nil {
 		return nil, errors.New("failed to look up command")
 	}
-	cmdArgs := val.Array[1:len(val.Array)]
+	cmdArgs := val.Array[1:]
 	return cmd.Execute(cmdName, cmdArgs)
 }
 

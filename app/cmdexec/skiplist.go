@@ -140,16 +140,16 @@ func (l *SkipList) findInsertion(score int, height int) []*Node {
 	return prevs
 }
 
-func (l *SkipList) Add(member string, score int) {
+func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
 	node, found := l.MemberMap[member]
 	if found {
-		if score == node.Score {
-			return
+		if insertOnly || score == node.Score {
+			return false
 		}
 		l.Remove(member)
 		delete(l.MemberMap, member)
-		l.Add(member, score)
-		return
+		l.Add(member, score, true)
+		return true
 	}
 
 	newHeight := l.getHeight()
@@ -170,7 +170,7 @@ func (l *SkipList) Add(member string, score int) {
 			l.Head[i] = newNode
 		}
 		l.Tail = newNode
-		return
+		return true
 	}
 
 	// Find insertion point
@@ -201,6 +201,8 @@ func (l *SkipList) Add(member string, score int) {
 	if prevs[0] == l.Tail {
 		l.Tail = newNode
 	}
+
+	return true
 }
 
 func (l *SkipList) Visualize() {
