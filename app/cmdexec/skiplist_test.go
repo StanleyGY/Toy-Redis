@@ -42,7 +42,7 @@ func TestAddRemoveScale(t *testing.T) {
 
 	// Intrusively check `Add`
 	idx := 0
-	for curr := sl.Head[0]; curr != nil; curr = curr.NextNodes[0] {
+	for curr := sl.Head.NextNodes[0]; curr != sl.Tail; curr = curr.NextNodes[0] {
 		assert.Equal(t, curr.Score, idx)
 		idx++
 	}
@@ -66,6 +66,9 @@ func TestRange(t *testing.T) {
 
 	// Test where ranges include some nodes
 	assert.Equal(t, 3, sl.CountRange(4, 13))
+	assert.Equal(t, 1, sl.CountRange(1, 1))
+	assert.Equal(t, 1, sl.CountRange(14, 14))
+
 	nodes := sl.FindRange(5, 12)
 	assert.Equal(t, 5, nodes[0].Score)
 	assert.Equal(t, 8, nodes[1].Score)

@@ -2,36 +2,56 @@ package cmdexec
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 )
 
 const (
-	SkipListDefaultMaxHeight = 32
+	SkipListDefaultMaxHeight = 36
 )
 
 type Node struct {
 	Score     int
+	Height    int
+	Spans     []int
 	Member    string
 	PrevNodes []*Node
 	NextNodes []*Node
 }
 
-func (n Node) GetHeight() int {
-	return len(n.NextNodes)
+func MakeNode(member string, score int, height int) *Node {
+	node := &Node{
+		Member:    member,
+		Score:     score,
+		Height:    height,
+		Spans:     make([]int, height),
+		NextNodes: make([]*Node, height),
+		PrevNodes: make([]*Node, height),
+	}
+	for i := 0; i < height; i++ {
+		node.Spans[i] = 1
+	}
+	return node
 }
 
 type SkipList struct {
 	MemberMap map[string]*Node
 	Rand      *rand.Rand
 	NumElems  int
-	Head      []*Node
+	Head      *Node
 	Tail      *Node
 }
 
 func MakeSkipList(seed int64) *SkipList {
+	headNode := MakeNode("head", math.MinInt, SkipListDefaultMaxHeight)
+	tailNode := MakeNode("tail", math.MaxInt, 1)
+	headNode.NextNodes[0] = tailNode
+	tailNode.PrevNodes[0] = headNode
+
 	return &SkipList{
 		MemberMap: make(map[string]*Node),
-		Head:      make([]*Node, SkipListDefaultMaxHeight),
+		Head:      headNode,
+		Tail:      tailNode,
 		Rand:      rand.New(rand.NewSource(seed)),
 	}
 }
@@ -54,14 +74,14 @@ func (l *SkipList) Front() *Node {
 	if l.NumElems == 0 {
 		return nil
 	}
-	return l.Head[0]
+	return l.Head.NextNodes[0]
 }
 
 func (l *SkipList) Back() *Node {
 	if l.NumElems == 0 {
 		return nil
 	}
-	return l.Tail
+	return l.Tail.PrevNodes[0]
 }
 
 func (l *SkipList) Size() int {
@@ -89,26 +109,18 @@ func (l *SkipList) findNodeAtLeftRange(score int) *Node {
 	}
 
 	var ans *Node
-	var h int
+	h := l.Head.Height - 1
+	curr := l.Head
 
-	for h = len(l.Head) - 1; h >= 0; h-- {
-		if l.Head[h] != nil && score > l.Head[h].Score {
-			break
-		}
-		ans = l.Head[h]
-	}
-
-	// At this point, we are at a node `curr` where `curr.Score < curr`
 	// Keep pushing to the right to increase `curr.Score` and decrease `ans.Score`
-	curr := l.Head[h]
-
 	for h >= 0 {
 		next := curr.NextNodes[h]
 		if next == nil {
 			h--
-		} else if score > next.Score {
+		} else if next.Score < score {
 			curr = next
 		} else {
+			// next.Score >= score
 			ans = next
 			h--
 		}
@@ -129,19 +141,12 @@ func (l *SkipList) findNodeAtRightRange(score int) *Node {
 		return nil
 	}
 
-	var h int
-	for h = len(l.Head) - 1; h >= 0; h-- {
-		if l.Head[h] != nil && l.Head[h].Score <= score {
-			break
-		}
-	}
-
-	// At this point, we are at a node where `score >= curr.Score`
-	// Keep pushing to the right to increase `curr.Score` and increase `ans.Score`
 	var ans *Node
-	curr := l.Head[h]
+	h := l.Head.Height - 1
+	curr := l.Head
+
+	// Keep pushing to the right to increase `curr.Score` and increase `ans.Score`
 	for h >= 0 {
-		// Invariant: curr.Score <= score
 		ans = curr
 		next := curr.NextNodes[h]
 		if next == nil {
@@ -203,22 +208,14 @@ func (l *SkipList) Remove(member string) bool {
 		return false
 	}
 
-	for i := 0; i < curr.GetHeight(); i++ {
+	for i := 0; i < curr.Height; i++ {
 		prev := curr.PrevNodes[i]
 		next := curr.NextNodes[i]
 
-		if l.Head[i] == curr {
-			l.Head[i] = next
-		}
-		if prev != nil {
-			prev.NextNodes[i] = next
-		}
+		prev.NextNodes[i] = next
 		if next != nil {
 			next.PrevNodes[i] = prev
 		}
-	}
-	if l.Tail == curr {
-		l.Tail = curr.PrevNodes[0]
 	}
 
 	l.NumElems--
@@ -226,23 +223,11 @@ func (l *SkipList) Remove(member string) bool {
 	return true
 }
 
-func (l *SkipList) findInsertion(score int, height int) []*Node {
+func (l *SkipList) findInsertionPos(score int, height int) []*Node {
 	prevs := make([]*Node, height)
 
-	var curr *Node
-	var h int
-
-	for h = len(l.Head) - 1; h >= 0; h-- {
-		if l.Head[h] != nil && score >= l.Head[h].Score {
-			break
-		}
-	}
-
-	if h < 0 {
-		return prevs
-	}
-
-	curr = l.Head[h]
+	h := l.Head.Height - 1
+	curr := l.Head
 	for h >= 0 {
 		if score > curr.Score {
 			// Track nodes at each level that comes before the current node
@@ -253,6 +238,7 @@ func (l *SkipList) findInsertion(score int, height int) []*Node {
 			// Keep searching
 			next := curr.NextNodes[h]
 			if next == nil || score < next.Score {
+				curr.Spans[h]++
 				h--
 			} else {
 				curr = next
@@ -274,54 +260,29 @@ func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
 		return true
 	}
 
+	// Create a new node
 	newHeight := l.getHeight()
-	newNode := &Node{
-		Member:    member,
-		Score:     score,
-		PrevNodes: make([]*Node, newHeight),
-		NextNodes: make([]*Node, newHeight),
-	}
-
-	// fmt.Printf("adding node: %s, score: %d, height: %d\n", member, score, newHeight)
+	newNode := MakeNode(member, score, newHeight)
 
 	l.NumElems++
 	l.MemberMap[member] = newNode
 
-	if l.NumElems == 1 {
-		for i := 0; i < newHeight; i++ {
-			l.Head[i] = newNode
-		}
-		l.Tail = newNode
-		return true
-	}
+	prevs := l.findInsertionPos(score, newHeight)
 
-	// Find insertion point
-	prevs := l.findInsertion(score, newHeight)
-
-	// Link prev/next nodes together
 	for i := 0; i < newHeight; i++ {
-		var next *Node
+		var prev *Node = prevs[i]
+		var next *Node = prev.NextNodes[i]
 
-		if prevs[i] == nil {
-			if l.Head[i] != nil {
-				next = l.Head[i]
-			}
-			l.Head[i] = newNode
-		} else {
-			next = prevs[i].NextNodes[i]
-			prevs[i].NextNodes[i] = newNode
-		}
-
+		// Link with prev/next nodes
+		prev.NextNodes[i] = newNode
 		if next != nil {
 			next.PrevNodes[i] = newNode
 		}
-
-		newNode.PrevNodes[i] = prevs[i]
+		newNode.PrevNodes[i] = prev
 		newNode.NextNodes[i] = next
-	}
 
-	if prevs[0] == l.Tail {
-		l.Tail = newNode
+		// Update spans for prev nodes
+		prev.Spans[i]--
 	}
 
 	return true
@@ -331,8 +292,26 @@ func (l *SkipList) Visualize() {
 	if l.NumElems == 0 {
 		return
 	}
-	for curr := l.Head[0]; curr != nil; curr = curr.NextNodes[0] {
+	for curr := l.Head; curr != nil; curr = curr.NextNodes[0] {
 		fmt.Printf("%s,%d ", curr.Member, curr.Score)
 	}
 	fmt.Println()
+}
+
+func (l *SkipList) VisualizeSpans() {
+	if l.NumElems == 0 {
+		return
+	}
+
+	fmt.Println()
+	for i := SkipListDefaultMaxHeight - 1; i >= 0; i-- {
+		for curr := l.Head; curr != nil; curr = curr.NextNodes[0] {
+			if i >= len(curr.Spans) {
+				fmt.Printf("    ")
+			} else {
+				fmt.Printf("%03d ", curr.Spans[i])
+			}
+		}
+		fmt.Println()
+	}
 }
