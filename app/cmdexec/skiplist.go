@@ -203,10 +203,10 @@ func (l *SkipList) FindByRange(min int, max int) []*Node {
 	return res
 }
 
-func (l *SkipList) GetRank(member string) (int, bool) {
+func (l *SkipList) GetRank(member string) (*Node, int) {
 	target, found := l.MemberMap[member]
 	if !found {
-		return 0, false
+		return nil, 0
 	}
 
 	rank := 0
@@ -221,7 +221,7 @@ func (l *SkipList) GetRank(member string) (int, bool) {
 			curr = next
 		}
 	}
-	return rank, true
+	return curr, rank
 }
 
 func (l *SkipList) FindByRank(rank int) *Node {
@@ -267,18 +267,47 @@ func (l *SkipList) FindByRanks(start int, end int) []*Node {
 }
 
 func (l *SkipList) Remove(member string) bool {
-	curr, found := l.MemberMap[member]
+	target, found := l.MemberMap[member]
 	if !found {
 		return false
 	}
 
-	for i := 0; i < curr.Height; i++ {
-		prev := curr.PrevNodes[i]
-		next := curr.NextNodes[i]
+	// Find the `prevs` that are above the height of  `target` node.
+	// Can stop the search once it reaches the height of `target` node
+	// then we'll use `target.PrevNodes[i]`
+	prevs := make([]*Node, SkipListDefaultMaxHeight)
+	h := l.Head.Height - 1
+	curr := l.Head
+	for h >= target.Height {
+		next := curr.NextNodes[h]
+		if next == nil || next.Score > target.Score {
+			prevs[h] = curr
+			h--
+		} else {
+			curr = next
+		}
+	}
+	for i := 0; i < target.Height; i++ {
+		prevs[i] = target.PrevNodes[i]
+	}
+
+	// Relink prev/next nodes
+	for i := 0; i < target.Height; i++ {
+		prev := target.PrevNodes[i]
+		next := target.NextNodes[i]
 
 		prev.NextNodes[i] = next
 		if next != nil {
 			next.PrevNodes[i] = prev
+		}
+	}
+
+	// Update spans
+	for i := 0; i < SkipListDefaultMaxHeight; i++ {
+		if i < target.Height {
+			prevs[i].Spans[i] += (target.Spans[i] - 1)
+		} else {
+			prevs[i].Spans[i]--
 		}
 	}
 
@@ -287,8 +316,9 @@ func (l *SkipList) Remove(member string) bool {
 	return true
 }
 
-func (l *SkipList) findInsertionPos(score int, height int) []*Node {
+func (l *SkipList) findInsertionPos(score int, height int) ([]*Node, []int) {
 	prevs := make([]*Node, height)
+	prevSpans := make([]int, height)
 
 	h := l.Head.Height - 1
 	curr := l.Head
@@ -302,14 +332,21 @@ func (l *SkipList) findInsertionPos(score int, height int) []*Node {
 			// Keep searching
 			next := curr.NextNodes[h]
 			if next == nil || score < next.Score {
-				curr.Spans[h]++
+				// No need to track the distance traversed for `h > height`
+				if h >= height {
+					curr.Spans[h]++
+				}
 				h--
 			} else {
+				// Update the distance traversed since prevs[i], i > h
+				for i := h + 1; i < height; i++ {
+					prevSpans[i] += curr.Spans[h]
+				}
 				curr = next
 			}
 		}
 	}
-	return prevs
+	return prevs, prevSpans
 }
 
 func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
@@ -331,7 +368,7 @@ func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
 	l.NumElems++
 	l.MemberMap[member] = newNode
 
-	prevs := l.findInsertionPos(score, newHeight)
+	prevs, prevSpans := l.findInsertionPos(score, newHeight)
 
 	for i := 0; i < newHeight; i++ {
 		var prev *Node = prevs[i]
@@ -346,9 +383,9 @@ func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
 		newNode.NextNodes[i] = next
 
 		// Update spans for prev nodes
-		prev.Spans[i]--
+		newNode.Spans[i] = (prev.Spans[i] + 1) - (prevSpans[i] + 1)
+		prev.Spans[i] = prevSpans[i] + 1
 	}
-
 	return true
 }
 
@@ -356,7 +393,7 @@ func (l *SkipList) Visualize() {
 	if l.NumElems == 0 {
 		return
 	}
-	for curr := l.Head; curr != nil; curr = curr.NextNodes[0] {
+	for curr := l.Head.NextNodes[0]; curr != l.Tail; curr = curr.NextNodes[0] {
 		fmt.Printf("%s,%d ", curr.Member, curr.Score)
 	}
 	fmt.Println()
@@ -369,7 +406,7 @@ func (l *SkipList) VisualizeSpans() {
 
 	fmt.Println()
 	for i := SkipListDefaultMaxHeight - 1; i >= 0; i-- {
-		for curr := l.Head; curr != nil; curr = curr.NextNodes[0] {
+		for curr := l.Head; curr != l.Tail; curr = curr.NextNodes[0] {
 			if i >= len(curr.Spans) {
 				fmt.Printf("    ")
 			} else {

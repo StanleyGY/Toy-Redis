@@ -1,7 +1,9 @@
 package cmdexec
 
 import (
+	"fmt"
 	"math/rand"
+	"sort"
 	"testing"
 	"time"
 
@@ -54,7 +56,7 @@ func TestAddRemoveScale(t *testing.T) {
 	assert.Zero(t, sl.Size())
 }
 
-func TestRange(t *testing.T) {
+func TestRangeBasic(t *testing.T) {
 	sl := MakeSkipList(time.Now().Unix())
 
 	sl.Add("1", 1, true)
@@ -83,34 +85,34 @@ func TestRange(t *testing.T) {
 	assert.Equal(t, 0, sl.CountByRange(15, 14))
 }
 
-func TestRank(t *testing.T) {
-	sl := MakeSkipList(time.Now().Unix())
+func TestRankBasic(t *testing.T) {
+	sl := MakeSkipList(1)
 
 	sl.Add("1", 1, true)
 	sl.Add("3", 3, true)
-	sl.Add("5", 5, true)
 	sl.Add("8", 8, true)
+	sl.Add("5", 5, true)
 	sl.Add("12", 12, true)
 	sl.Add("14", 14, true)
 
 	// Test GetRank
-	r, ok := sl.GetRank("5")
-	assert.True(t, ok)
+	n, r := sl.GetRank("5")
+	assert.NotNil(t, n)
 	assert.Equal(t, 3, r)
 
-	r, ok = sl.GetRank("1")
-	assert.True(t, ok)
+	n, r = sl.GetRank("1")
+	assert.NotNil(t, n)
 	assert.Equal(t, 1, r)
 
-	r, ok = sl.GetRank("14")
-	assert.True(t, ok)
+	n, r = sl.GetRank("14")
+	assert.NotNil(t, n)
 	assert.Equal(t, 6, r)
 
-	_, ok = sl.GetRank("999")
-	assert.False(t, ok)
+	n, _ = sl.GetRank("999")
+	assert.Nil(t, n)
 
 	// Test FindByRank
-	n := sl.FindByRank(1)
+	n = sl.FindByRank(1)
 	assert.Equal(t, "1", n.Member)
 	n = sl.FindByRank(6)
 	assert.Equal(t, "14", n.Member)
@@ -122,4 +124,48 @@ func TestRank(t *testing.T) {
 	// Test FindByRanks
 	nodes := sl.FindByRanks(2, 4)
 	assert.Equal(t, 3, len(nodes))
+
+	// Test Remove
+	sl.VisualizeSpans()
+	sl.Remove("8")
+	nodes = sl.FindByRanks(2, 4)
+	assert.Equal(t, 3, len(nodes))
+
+	sl.Remove("1")
+	n = sl.FindByRank(1)
+	assert.Equal(t, "3", n.Member)
+
+	sl.Remove("5")
+	n = sl.FindByRank(2)
+	assert.Equal(t, "12", n.Member)
+	sl.VisualizeSpans()
+}
+
+func TestRankScale(t *testing.T) {
+	numElems := 100000
+
+	members := make([]int, numElems)
+	for i := 0; i < numElems; i++ {
+		members[i] = i
+	}
+	rand.Shuffle(numElems, func(i, j int) { members[i], members[j] = members[j], members[i] })
+
+	sl := MakeSkipList(9)
+	for i := 0; i < numElems; i++ {
+		sl.Add(fmt.Sprintf("%03d", members[i]), members[i], true)
+	}
+
+	numRemoved := numElems / 3
+	for i := 0; i < numRemoved; i++ {
+		pos := rand.Intn(numElems)
+		sl.Remove(fmt.Sprintf("%03d", members[pos]))
+		members = append(members[:pos], members[pos+1:]...)
+		numElems--
+	}
+
+	sort.Ints(members)
+	for i := 1; i <= numElems; i++ {
+		n := sl.FindByRank(i)
+		assert.Equal(t, fmt.Sprintf("%03d", members[i-1]), n.Member)
+	}
 }
