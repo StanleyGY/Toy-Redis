@@ -16,14 +16,16 @@ type CmdExecutor interface {
 }
 
 var CmdLookupTable = map[string]CmdExecutor{
-	"COMMAND": &PingCmdExecutor{},
-	"PING":    &PingCmdExecutor{},
-	"ECHO":    &EchoCmdExecutor{},
-	"SET":     &SetCmdExecutor{},
-	"GET":     &SetCmdExecutor{},
-	"ZADD":    &ZsetCmdExecutor{},
-	"ZREM":    &ZsetCmdExecutor{},
-	"ZSCORE":  &ZsetCmdExecutor{},
+	"COMMAND":       &PingCmdExecutor{},
+	"PING":          &PingCmdExecutor{},
+	"ECHO":          &EchoCmdExecutor{},
+	"SET":           &SetCmdExecutor{},
+	"GET":           &SetCmdExecutor{},
+	"ZADD":          &ZsetCmdExecutor{},
+	"ZREM":          &ZsetCmdExecutor{},
+	"ZSCORE":        &ZsetCmdExecutor{},
+	"ZCOUNT":        &ZsetCmdExecutor{},
+	"ZRANGEBYSCORE": &ZsetCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {

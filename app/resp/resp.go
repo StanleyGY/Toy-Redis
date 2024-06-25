@@ -22,26 +22,60 @@ type RespValue struct {
 	Array         []*RespValue
 }
 
-func (rv RespValue) ToByteArray() []byte {
-	var buf bytes.Buffer
+func (rv RespValue) writeSimpleStrings(buf *bytes.Buffer) {
+	buf.WriteString(rv.SimpleStr)
+	buf.WriteString("\r\n")
+}
 
+func (rv RespValue) writeSimpleErrors(buf *bytes.Buffer) {
+	buf.WriteString(rv.SimpleStr)
+	buf.WriteString("\r\n")
+}
+
+func (rv RespValue) writeIntegers(buf *bytes.Buffer) {
+	buf.WriteString(strconv.Itoa(rv.Int))
+	buf.WriteString("\r\n")
+}
+
+func (rv RespValue) writeBulkStrings(buf *bytes.Buffer) {
+	if rv.IsNullBulkStr {
+		buf.WriteString(strconv.Itoa(-1))
+	} else {
+		buf.WriteString(strconv.Itoa(len(rv.BulkStr)))
+		buf.WriteString("\r\n")
+		buf.WriteString(rv.BulkStr)
+	}
+	buf.WriteString("\r\n")
+}
+
+func (rv RespValue) writeArrays(buf *bytes.Buffer) {
+	buf.WriteString(strconv.Itoa(len(rv.Array)))
+	buf.WriteString("\r\n")
+
+	for _, arr := range rv.Array {
+		arr.writeType(buf)
+	}
+}
+
+func (rv RespValue) writeType(buf *bytes.Buffer) {
 	buf.WriteString(rv.DataType)
 	switch rv.DataType {
 	case TypeSimpleErrors:
+		rv.writeSimpleErrors(buf)
 	case TypeSimpleStrings:
-		buf.WriteString(rv.SimpleStr)
+		rv.writeSimpleStrings(buf)
 	case TypeIntegers:
-		buf.WriteString(strconv.Itoa(rv.Int))
+		rv.writeIntegers(buf)
 	case TypeBulkStrings:
-		if rv.IsNullBulkStr {
-			buf.WriteString(strconv.Itoa(-1))
-		} else {
-			buf.WriteString(strconv.Itoa(len(rv.BulkStr)))
-			buf.WriteString("\r\n")
-			buf.WriteString(rv.BulkStr)
-		}
+		rv.writeBulkStrings(buf)
+	case TypeArrays:
+		rv.writeArrays(buf)
 	}
-	buf.WriteString("\r\n")
+}
+
+func (rv RespValue) ToByteArray() []byte {
+	var buf bytes.Buffer
+	rv.writeType(&buf)
 	return buf.Bytes()
 }
 
