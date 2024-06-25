@@ -47,6 +47,7 @@ func MakeSkipList(seed int64) *SkipList {
 	tailNode := MakeNode("tail", math.MaxInt, 1)
 	headNode.NextNodes[0] = tailNode
 	tailNode.PrevNodes[0] = headNode
+	tailNode.Spans[0] = 0
 
 	return &SkipList{
 		MemberMap: make(map[string]*Node),
@@ -162,7 +163,7 @@ func (l *SkipList) findNodeAtRightRange(score int) *Node {
 	return ans
 }
 
-func (l *SkipList) CountRange(min int, max int) int {
+func (l *SkipList) CountByRange(min int, max int) int {
 	if min > max {
 		return 0
 	}
@@ -182,7 +183,7 @@ func (l *SkipList) CountRange(min int, max int) int {
 	return c
 }
 
-func (l *SkipList) FindRange(min int, max int) []*Node {
+func (l *SkipList) FindByRange(min int, max int) []*Node {
 	if min > max {
 		return nil
 	}
@@ -199,6 +200,69 @@ func (l *SkipList) FindRange(min int, max int) []*Node {
 		res = append(res, curr)
 	}
 	res = append(res, end)
+	return res
+}
+
+func (l *SkipList) GetRank(member string) (int, bool) {
+	target, found := l.MemberMap[member]
+	if !found {
+		return 0, false
+	}
+
+	rank := 0
+	h := l.Head.Height - 1
+	curr := l.Head
+	for curr != target {
+		next := curr.NextNodes[h]
+		if next == nil || next.Score > target.Score {
+			h--
+		} else {
+			rank += curr.Spans[h]
+			curr = next
+		}
+	}
+	return rank, true
+}
+
+func (l *SkipList) FindByRank(rank int) *Node {
+	if rank <= 0 || rank > l.NumElems {
+		return nil
+	}
+
+	currRank := 0
+	h := l.Head.Height - 1
+	curr := l.Head
+
+	for currRank != rank {
+		next := curr.NextNodes[h]
+		if currRank+curr.Spans[h] <= rank {
+			currRank += curr.Spans[h]
+			curr = next
+		} else {
+			h--
+		}
+	}
+
+	return curr
+}
+
+func (l *SkipList) FindByRanks(start int, end int) []*Node {
+	if start > end {
+		return nil
+	}
+
+	startNode := l.FindByRank(start)
+	endNode := l.FindByRank(end)
+
+	if startNode == nil || endNode == nil {
+		return nil
+	}
+
+	res := make([]*Node, 0)
+	for curr := startNode; curr != endNode; curr = curr.NextNodes[0] {
+		res = append(res, curr)
+	}
+	res = append(res, endNode)
 	return res
 }
 
