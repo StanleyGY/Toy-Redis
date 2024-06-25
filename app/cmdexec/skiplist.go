@@ -76,6 +76,127 @@ func (l *SkipList) GetScore(member string) int {
 	return 0
 }
 
+// findNodeAtLRange searches for the smallest node where `node.Score >= score`
+func (l *SkipList) findNodeAtLeftRange(score int) *Node {
+	if l.NumElems == 0 {
+		return nil
+	}
+	if score <= l.Front().Score {
+		return l.Front()
+	}
+	if score > l.Back().Score {
+		return nil
+	}
+
+	var ans *Node
+	var h int
+
+	for h = len(l.Head) - 1; h >= 0; h-- {
+		if l.Head[h] != nil && score > l.Head[h].Score {
+			break
+		}
+		ans = l.Head[h]
+	}
+
+	// At this point, we are at a node `curr` where `curr.Score < curr`
+	// Keep pushing to the right to increase `curr.Score` and decrease `ans.Score`
+	curr := l.Head[h]
+
+	for h >= 0 {
+		next := curr.NextNodes[h]
+		if next == nil {
+			h--
+		} else if score > next.Score {
+			curr = next
+		} else {
+			ans = next
+			h--
+		}
+	}
+	return ans
+}
+
+// findNodeAtLRange searches for the biggest node where `node.Score <= score`
+func (l *SkipList) findNodeAtRightRange(score int) *Node {
+	// Idea: keep push to the right for a larger value
+	if l.NumElems == 0 {
+		return nil
+	}
+	if score >= l.Back().Score {
+		return l.Back()
+	}
+	if score < l.Front().Score {
+		return nil
+	}
+
+	var h int
+	for h = len(l.Head) - 1; h >= 0; h-- {
+		if l.Head[h] != nil && l.Head[h].Score <= score {
+			break
+		}
+	}
+
+	// At this point, we are at a node where `score >= curr.Score`
+	// Keep pushing to the right to increase `curr.Score` and increase `ans.Score`
+	var ans *Node
+	curr := l.Head[h]
+	for h >= 0 {
+		// Invariant: curr.Score <= score
+		ans = curr
+		next := curr.NextNodes[h]
+		if next == nil {
+			h--
+		} else if next.Score <= score {
+			curr = next
+		} else {
+			// next.Score > score
+			ans = curr
+			h--
+		}
+	}
+	return ans
+}
+
+func (l *SkipList) CountRange(min int, max int) int {
+	if min > max {
+		return 0
+	}
+
+	start := l.findNodeAtLeftRange(min)
+	end := l.findNodeAtRightRange(max)
+
+	if start == nil || end == nil {
+		return 0
+	}
+
+	c := 0
+	for curr := start; curr != end; curr = curr.NextNodes[0] {
+		c++
+	}
+	c++
+	return c
+}
+
+func (l *SkipList) FindRange(min int, max int) []*Node {
+	if min > max {
+		return nil
+	}
+
+	start := l.findNodeAtLeftRange(min)
+	end := l.findNodeAtRightRange(max)
+
+	if start == nil || end == nil {
+		return nil
+	}
+
+	res := make([]*Node, 0)
+	for curr := start; curr != end; curr = curr.NextNodes[0] {
+		res = append(res, curr)
+	}
+	res = append(res, end)
+	return res
+}
+
 func (l *SkipList) Remove(member string) bool {
 	curr, found := l.MemberMap[member]
 	if !found {

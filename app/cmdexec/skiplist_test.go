@@ -17,7 +17,7 @@ func randString(n int) string {
 	return string(s)
 }
 
-func TestAddRemove(t *testing.T) {
+func TestAddRemoveScale(t *testing.T) {
 	numElems := 100000
 	members := make(map[string]int)
 
@@ -52,4 +52,30 @@ func TestAddRemove(t *testing.T) {
 		sl.Remove(m)
 	}
 	assert.Zero(t, sl.Size())
+}
+
+func TestRange(t *testing.T) {
+	sl := MakeSkipList(time.Now().Unix())
+
+	sl.Add("1", 1, true)
+	sl.Add("3", 3, true)
+	sl.Add("5", 5, true)
+	sl.Add("8", 8, true)
+	sl.Add("12", 12, true)
+	sl.Add("14", 14, true)
+
+	// Test where ranges include some nodes
+	assert.Equal(t, 3, sl.CountRange(4, 13))
+	nodes := sl.FindRange(5, 12)
+	assert.Equal(t, 5, nodes[0].Score)
+	assert.Equal(t, 8, nodes[1].Score)
+	assert.Equal(t, 12, nodes[2].Score)
+
+	// Test where ranges include all nodes
+	assert.Equal(t, 6, sl.CountRange(1, 100))
+
+	// Test where ranges are invalid
+	assert.Equal(t, 0, sl.CountRange(15, 100))
+	assert.Equal(t, 0, sl.CountRange(-15, 0))
+	assert.Equal(t, 0, sl.CountRange(15, 14))
 }
