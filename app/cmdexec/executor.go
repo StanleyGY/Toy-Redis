@@ -26,6 +26,8 @@ var CmdLookupTable = map[string]CmdExecutor{
 	"ZSCORE":        &ZsetCmdExecutor{},
 	"ZCOUNT":        &ZsetCmdExecutor{},
 	"ZRANGEBYSCORE": &ZsetCmdExecutor{},
+	"ZRANK":         &ZsetCmdExecutor{},
+	"ZRANGE":        &ZsetCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {

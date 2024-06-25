@@ -98,27 +98,27 @@ func TestRankBasic(t *testing.T) {
 	// Test GetRank
 	n, r := sl.GetRank("5")
 	assert.NotNil(t, n)
-	assert.Equal(t, 3, r)
+	assert.Equal(t, 2, r)
 
 	n, r = sl.GetRank("1")
 	assert.NotNil(t, n)
-	assert.Equal(t, 1, r)
+	assert.Equal(t, 0, r)
 
 	n, r = sl.GetRank("14")
 	assert.NotNil(t, n)
-	assert.Equal(t, 6, r)
+	assert.Equal(t, 5, r)
 
 	n, _ = sl.GetRank("999")
 	assert.Nil(t, n)
 
 	// Test FindByRank
-	n = sl.FindByRank(1)
-	assert.Equal(t, "1", n.Member)
-	n = sl.FindByRank(6)
-	assert.Equal(t, "14", n.Member)
-	n = sl.FindByRank(7)
-	assert.Nil(t, n)
 	n = sl.FindByRank(0)
+	assert.Equal(t, "1", n.Member)
+	n = sl.FindByRank(5)
+	assert.Equal(t, "14", n.Member)
+	n = sl.FindByRank(6)
+	assert.Nil(t, n)
+	n = sl.FindByRank(10)
 	assert.Nil(t, n)
 
 	// Test FindByRanks
@@ -126,19 +126,17 @@ func TestRankBasic(t *testing.T) {
 	assert.Equal(t, 3, len(nodes))
 
 	// Test Remove
-	sl.VisualizeSpans()
 	sl.Remove("8")
 	nodes = sl.FindByRanks(2, 4)
 	assert.Equal(t, 3, len(nodes))
 
 	sl.Remove("1")
-	n = sl.FindByRank(1)
+	n = sl.FindByRank(0)
 	assert.Equal(t, "3", n.Member)
 
 	sl.Remove("5")
-	n = sl.FindByRank(2)
+	n = sl.FindByRank(1)
 	assert.Equal(t, "12", n.Member)
-	sl.VisualizeSpans()
 }
 
 func TestRankScale(t *testing.T) {
@@ -164,8 +162,8 @@ func TestRankScale(t *testing.T) {
 	}
 
 	sort.Ints(members)
-	for i := 1; i <= numElems; i++ {
+	for i := 0; i < numElems; i++ {
 		n := sl.FindByRank(i)
-		assert.Equal(t, fmt.Sprintf("%03d", members[i-1]), n.Member)
+		assert.Equal(t, fmt.Sprintf("%03d", members[i]), n.Member)
 	}
 }

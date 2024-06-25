@@ -167,7 +167,7 @@ func (e ZsetCmdExecutor) executeZCountCmd(cmdArgs []*resp.RespValue) (*resp.Resp
 		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
 	}
 
-	numElems := sortedSet.CountRange(min, max)
+	numElems := sortedSet.CountByRange(min, max)
 	return &resp.RespValue{DataType: resp.TypeIntegers, Int: numElems}, nil
 }
 
@@ -218,12 +218,138 @@ func (e ZsetCmdExecutor) executeZRangeByScoreCmd(cmdArgs []*resp.RespValue) (*re
 		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
 	}
 
-	nodes := sortedSet.FindRange(min, max)
+	nodes := sortedSet.FindByRange(min, max)
 	res := make([]*resp.RespValue, 0)
 	for _, node := range nodes {
 		res = append(res, &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: node.Member})
 		if withScoresFlag {
 			res = append(res, &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: strconv.Itoa(node.Score)})
+		}
+	}
+	return &resp.RespValue{DataType: resp.TypeArrays, Array: res}, nil
+}
+
+/*
+Syntax: ZRANK key member [WITHSCORE]
+Reply:
+  - Null reply: if key or member does not exist
+  - Integer reply: the rank of the member when WITHSCORE is not used
+  - Array reply: the rank of the member when WITHSCORE is used
+*/
+func (e ZsetCmdExecutor) parseZRankCmdArgs(cmdArgs []*resp.RespValue, key *string, member *string, withScoreFlag *bool) error {
+	if len(cmdArgs) < 2 || len(cmdArgs) > 3 {
+		return ErrInvalidArgs
+	}
+
+	*key = cmdArgs[0].BulkStr
+	*member = cmdArgs[1].BulkStr
+
+	if len(cmdArgs) == 3 {
+		if cmdArgs[2].BulkStr == "WITHSCORE" {
+			*withScoreFlag = true
+		} else {
+			return ErrInvalidArgs
+		}
+	}
+	return nil
+}
+
+func (e ZsetCmdExecutor) executeZRankCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	var (
+		key           string
+		member        string
+		withScoreFlag bool
+	)
+	err := e.parseZRankCmdArgs(cmdArgs, &key, &member, &withScoreFlag)
+	if err != nil {
+		return nil, err
+	}
+
+	sortedSet, found := db.SortedSetStore[key]
+	if !found {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+
+	node, rank := sortedSet.GetRank(member)
+	if node == nil {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+
+	if !withScoreFlag {
+		return &resp.RespValue{DataType: resp.TypeIntegers, Int: rank}, nil
+	}
+	return &resp.RespValue{DataType: resp.TypeArrays, Array: []*resp.RespValue{
+		{DataType: resp.TypeIntegers, Int: rank},
+		{DataType: resp.TypeBulkStrings, BulkStr: strconv.Itoa(node.Score)},
+	}}, nil
+}
+
+/*
+Syntax: ZRANGE key start stop [WITHSCORES]
+Reply:
+  - Array reply: a list of members with, optionally, their scores
+*/
+func (e ZsetCmdExecutor) parseZRangeCmdArgs(cmdArgs []*resp.RespValue, key *string, start *int, stop *int, withScoreFlag *bool) error {
+	if len(cmdArgs) < 3 || len(cmdArgs) > 4 {
+		return ErrInvalidArgs
+	}
+	var err error
+
+	*key = cmdArgs[0].BulkStr
+
+	*start, err = strconv.Atoi(cmdArgs[1].BulkStr)
+	if err != nil {
+		return err
+	}
+
+	*stop, err = strconv.Atoi(cmdArgs[2].BulkStr)
+	if err != nil {
+		return err
+	}
+
+	if len(cmdArgs) == 4 {
+		if cmdArgs[3].BulkStr == "WITHSCORE" {
+			*withScoreFlag = true
+		} else {
+			return ErrInvalidArgs
+		}
+	}
+	return nil
+}
+
+func (e ZsetCmdExecutor) executeZRangeCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	var (
+		key           string
+		start         int
+		stop          int
+		withScoreFlag bool
+	)
+	err := e.parseZRangeCmdArgs(cmdArgs, &key, &start, &stop, &withScoreFlag)
+	if err != nil {
+		return nil, err
+	}
+
+	sortedSet, found := db.SortedSetStore[key]
+	if !found {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+
+	nodes := sortedSet.FindByRanks(start, stop)
+	if nodes == nil {
+		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	}
+
+	res := make([]*resp.RespValue, 0)
+	for _, node := range nodes {
+		res = append(res, &resp.RespValue{
+			DataType: resp.TypeBulkStrings,
+			BulkStr:  node.Member,
+		})
+		if withScoreFlag {
+			res = append(res, &resp.RespValue{
+				DataType: resp.TypeBulkStrings,
+				BulkStr:  strconv.Itoa(node.Score),
+			})
 		}
 	}
 	return &resp.RespValue{DataType: resp.TypeArrays, Array: res}, nil
@@ -241,6 +367,10 @@ func (e ZsetCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*re
 		return e.executeZCountCmd(cmdArgs)
 	case "ZRANGEBYSCORE":
 		return e.executeZRangeByScoreCmd(cmdArgs)
+	case "ZRANK":
+		return e.executeZRankCmd(cmdArgs)
+	case "ZRANGE":
+		return e.executeZRangeCmd(cmdArgs)
 	}
 	return nil, nil
 }

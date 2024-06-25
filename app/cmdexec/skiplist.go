@@ -221,11 +221,11 @@ func (l *SkipList) GetRank(member string) (*Node, int) {
 			curr = next
 		}
 	}
-	return curr, rank
+	return curr, rank - 1
 }
 
 func (l *SkipList) FindByRank(rank int) *Node {
-	if rank <= 0 || rank > l.NumElems {
+	if rank < 0 || rank >= l.NumElems {
 		return nil
 	}
 
@@ -233,9 +233,9 @@ func (l *SkipList) FindByRank(rank int) *Node {
 	h := l.Head.Height - 1
 	curr := l.Head
 
-	for currRank != rank {
+	for currRank != rank+1 {
 		next := curr.NextNodes[h]
-		if currRank+curr.Spans[h] <= rank {
+		if currRank+curr.Spans[h] <= rank+1 {
 			currRank += curr.Spans[h]
 			curr = next
 		} else {
@@ -249,6 +249,12 @@ func (l *SkipList) FindByRank(rank int) *Node {
 func (l *SkipList) FindByRanks(start int, end int) []*Node {
 	if start > end {
 		return nil
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end >= l.NumElems {
+		end = l.NumElems - 1
 	}
 
 	startNode := l.FindByRank(start)
