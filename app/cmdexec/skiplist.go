@@ -339,14 +339,15 @@ func (l *SkipList) findInsertionPos(score int, height int) ([]*Node, []int) {
 			next := curr.NextNodes[h]
 			if next == nil || score < next.Score {
 				// No need to track the distance traversed for `h > height`
+				// For `h >= height`, incr the span as we traverse down
 				if h >= height {
 					curr.Spans[h]++
 				}
 				h--
 			} else {
-				// Update the distance traversed since prevs[i], i > h
-				for i := h + 1; i < height; i++ {
-					prevSpans[i] += curr.Spans[h]
+				// For `h < height`, calculate the paths traversed from `prevs[h]`
+				if h+1 < height {
+					prevSpans[h+1] += curr.Spans[h]
 				}
 				curr = next
 			}
@@ -389,6 +390,20 @@ func (l *SkipList) Add(member string, score int, insertOnly bool) bool {
 		newNode.NextNodes[i] = next
 
 		// Update spans for prev nodes
+		/*
+								           		prevSpans
+			   (5)
+			   (5)
+				1	[4]			[x]			1 (+1+0) 	-> 3
+				1	1  	[3]		[x]			1 (+0) 	 	-> 2
+				1	1   1	[1] [x]	1		0			-> 1
+				[?] - newNode.PrevNodes[i]
+				(?) - Similarly but above newNode.Height
+				[x] - newNode
+		*/
+		if i > 0 {
+			prevSpans[i] += prevSpans[i-1]
+		}
 		newNode.Spans[i] = (prev.Spans[i] + 1) - (prevSpans[i] + 1)
 		prev.Spans[i] = prevSpans[i] + 1
 	}
