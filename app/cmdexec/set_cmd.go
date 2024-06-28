@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -71,7 +70,7 @@ func (e setCmdExecutor) set(key string, val string, nxFlag bool, expiry bool, tt
 	return true
 }
 
-func (e setCmdExecutor) executeSetCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e setCmdExecutor) executeSetCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key    string
 		val    string
@@ -81,23 +80,23 @@ func (e setCmdExecutor) executeSetCmd(c *event.ClientInfo, cmdArgs []*resp.RespV
 	)
 	e.parseSetCmdArgs(cmdArgs, &key, &val, &nxFlag, &expiry, &ttl)
 	if !e.set(key, val, nxFlag, expiry, ttl) {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
-	event.AddSimpleStringReplyEvent(c, "OK")
+	AddSimpleStringReplyEvent(c, "OK")
 }
 
-func (e setCmdExecutor) executeGetCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e setCmdExecutor) executeGetCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	key := cmdArgs[0].BulkStr
 	if !e.doesKeyExistOrUnexpire(key) {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 	val := db.DictStore[key]
-	event.AddBulkStringReplyEvent(c, val.Value)
+	AddBulkStringReplyEvent(c, val.Value)
 }
 
-func (e setCmdExecutor) Execute(c *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
+func (e setCmdExecutor) Execute(c *ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
 	switch cmdName {
 	case "SET":
 		e.executeSetCmd(c, cmdArgs)

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -31,11 +30,11 @@ var CmdLookupTable = map[string]cmdExecutor{
 	"XREAD":         &StreamCmdExecutor{},
 }
 
-func Execute(c *event.ClientInfo, val *resp.RespValue) {
+func Execute(c *ClientInfo, val *resp.RespValue) {
 	cmdName := strings.ToUpper(val.Array[0].BulkStr)
 	cmd := CmdLookupTable[cmdName]
 	if cmd == nil {
-		event.AddErrorReplyEvent(c, errors.New("failed to look up command"))
+		AddErrorReplyEvent(c, errors.New("failed to look up command"))
 		return
 	}
 	cmdArgs := val.Array[1:]
@@ -43,7 +42,7 @@ func Execute(c *event.ClientInfo, val *resp.RespValue) {
 }
 
 type cmdExecutor interface {
-	Execute(client *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue)
+	Execute(client *ClientInfo, cmdName string, cmdArgs []*resp.RespValue)
 }
 
 /*
@@ -51,8 +50,8 @@ type cmdExecutor interface {
  */
 type pingCmdExecutor struct{}
 
-func (pingCmdExecutor) Execute(c *event.ClientInfo, _ string, _ []*resp.RespValue) {
-	event.AddSimpleStringReplyEvent(c, "PONG")
+func (pingCmdExecutor) Execute(c *ClientInfo, _ string, _ []*resp.RespValue) {
+	AddSimpleStringReplyEvent(c, "PONG")
 }
 
 /*
@@ -60,10 +59,10 @@ func (pingCmdExecutor) Execute(c *event.ClientInfo, _ string, _ []*resp.RespValu
  */
 type echoCmdExecutor struct{}
 
-func (echoCmdExecutor) Execute(c *event.ClientInfo, _ string, args []*resp.RespValue) {
+func (echoCmdExecutor) Execute(c *ClientInfo, _ string, args []*resp.RespValue) {
 	if len(args) == 0 {
-		event.AddErrorReplyEvent(c, ErrInvalidArgs)
+		AddErrorReplyEvent(c, ErrInvalidArgs)
 	} else {
-		event.AddBulkStringReplyEvent(c, "PONG")
+		AddBulkStringReplyEvent(c, "PONG")
 	}
 }

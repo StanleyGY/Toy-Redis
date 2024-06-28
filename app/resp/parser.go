@@ -1,11 +1,9 @@
-package parser
+package resp
 
 import (
 	"bytes"
 	"errors"
 	"strconv"
-
-	"github.com/stanleygy/toy-redis/app/resp"
 )
 
 var (
@@ -59,7 +57,7 @@ func parseInteger(r *bytes.Reader) (int, error) {
 	return strconv.Atoi(string(rawNum))
 }
 
-func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
+func parseArray(r *bytes.Reader) ([]*RespValue, error) {
 	// A sample array: "ECHO hey" is serialized to "*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"
 	expectedLenByte, err := readUntilLineBreak(r)
 	if err != nil {
@@ -70,7 +68,7 @@ func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 		return nil, err
 	}
 
-	vals := make([]*resp.RespValue, expectedLen)
+	vals := make([]*RespValue, expectedLen)
 	for i := 0; i < expectedLen; i++ {
 		vals[i], err = parseType(r)
 		if err != nil {
@@ -80,27 +78,27 @@ func parseArray(r *bytes.Reader) ([]*resp.RespValue, error) {
 	return vals, nil
 }
 
-func parseType(r *bytes.Reader) (*resp.RespValue, error) {
+func parseType(r *bytes.Reader) (*RespValue, error) {
 	t, err := r.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
-	var val resp.RespValue
+	var val RespValue
 	val.DataType = string(t)
 
 	switch val.DataType {
-	case resp.TypeBulkStrings:
+	case TypeBulkStrings:
 		val.BulkStr, err = parseBulkString(r)
-	case resp.TypeIntegers:
+	case TypeIntegers:
 		val.Int, err = parseInteger(r)
-	case resp.TypeArrays:
+	case TypeArrays:
 		val.Array, err = parseArray(r)
 	}
 	return &val, err
 }
 
-func Parse(buf []byte) *resp.RespValue {
+func Parse(buf []byte) *RespValue {
 	r := bytes.NewReader(buf)
 	resp, err := parseType(r)
 	if err != nil {

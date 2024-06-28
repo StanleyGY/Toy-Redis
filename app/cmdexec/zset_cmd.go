@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stanleygy/toy-redis/app/algo"
-	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -34,7 +33,7 @@ func (e zsetCmdExecutor) parseZAddCmdArgs(cmdArgs []*resp.RespValue, key *string
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZAddCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZAddCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key     string
 		members []string = make([]string, 0)
@@ -44,7 +43,7 @@ func (e zsetCmdExecutor) executeZAddCmd(c *event.ClientInfo, cmdArgs []*resp.Res
 
 	err := e.parseZAddCmdArgs(cmdArgs, &key, &members, &scores, &nxFlag)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
@@ -62,7 +61,7 @@ func (e zsetCmdExecutor) executeZAddCmd(c *event.ClientInfo, cmdArgs []*resp.Res
 		}
 	}
 
-	event.AddIntegerReplyEvent(c, numAdded)
+	AddIntegerReplyEvent(c, numAdded)
 }
 
 /*
@@ -75,7 +74,7 @@ func (e zsetCmdExecutor) parseZRemCmdArgs(cmdArgs []*resp.RespValue, key *string
 	}
 }
 
-func (e zsetCmdExecutor) executeZRemCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZRemCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key     string
 		members []string = make([]string, 0)
@@ -85,7 +84,7 @@ func (e zsetCmdExecutor) executeZRemCmd(c *event.ClientInfo, cmdArgs []*resp.Res
 	// Check if the key exists
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddIntegerReplyEvent(c, 0)
+		AddIntegerReplyEvent(c, 0)
 		return
 	}
 
@@ -95,7 +94,7 @@ func (e zsetCmdExecutor) executeZRemCmd(c *event.ClientInfo, cmdArgs []*resp.Res
 			numRemoved++
 		}
 	}
-	event.AddIntegerReplyEvent(c, numRemoved)
+	AddIntegerReplyEvent(c, numRemoved)
 }
 
 /*
@@ -110,7 +109,7 @@ func (e zsetCmdExecutor) parseZScoreCmdArgs(cmdArgs []*resp.RespValue, key *stri
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZScoreCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZScoreCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key    string
 		member string
@@ -118,18 +117,18 @@ func (e zsetCmdExecutor) executeZScoreCmd(c *event.ClientInfo, cmdArgs []*resp.R
 
 	err := e.parseZScoreCmdArgs(cmdArgs, &key, &member)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 
 	score := sortedSet.GetScore(member)
-	event.AddBulkStringReplyEvent(c, strconv.Itoa(score))
+	AddBulkStringReplyEvent(c, strconv.Itoa(score))
 }
 
 /*
@@ -155,7 +154,7 @@ func (e zsetCmdExecutor) parseZCountCmdArgs(cmdArgs []*resp.RespValue, key *stri
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZCountCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZCountCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key string
 		min int
@@ -164,18 +163,18 @@ func (e zsetCmdExecutor) executeZCountCmd(c *event.ClientInfo, cmdArgs []*resp.R
 
 	err := e.parseZCountCmdArgs(cmdArgs, &key, &min, &max)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 
 	numElems := sortedSet.CountByRange(min, max)
-	event.AddIntegerReplyEvent(c, numElems)
+	AddIntegerReplyEvent(c, numElems)
 }
 
 /*
@@ -207,7 +206,7 @@ func (e zsetCmdExecutor) parseZRangeByScoreCmdArgs(cmdArgs []*resp.RespValue, ke
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZRangeByScoreCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZRangeByScoreCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key            string
 		min            int
@@ -217,13 +216,13 @@ func (e zsetCmdExecutor) executeZRangeByScoreCmd(c *event.ClientInfo, cmdArgs []
 
 	err := e.parseZRangeByScoreCmdArgs(cmdArgs, &key, &min, &max, &withScoresFlag)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 
@@ -237,7 +236,7 @@ func (e zsetCmdExecutor) executeZRangeByScoreCmd(c *event.ClientInfo, cmdArgs []
 			res = append(res, resp.MakeBulkString(strconv.Itoa(node.Score)))
 		}
 	}
-	event.AddArrayReplyEvent(c, res)
+	AddArrayReplyEvent(c, res)
 }
 
 /*
@@ -265,7 +264,7 @@ func (e zsetCmdExecutor) parseZRankCmdArgs(cmdArgs []*resp.RespValue, key *strin
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZRankCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZRankCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key           string
 		member        string
@@ -273,28 +272,28 @@ func (e zsetCmdExecutor) executeZRankCmd(c *event.ClientInfo, cmdArgs []*resp.Re
 	)
 	err := e.parseZRankCmdArgs(cmdArgs, &key, &member, &withScoreFlag)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
 	// Look up sorted set at key
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 	node, rank := sortedSet.GetRank(member)
 	if node == nil {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 
 	// Generate reply events
 	if !withScoreFlag {
-		event.AddIntegerReplyEvent(c, rank)
+		AddIntegerReplyEvent(c, rank)
 		return
 	}
-	event.AddArrayReplyEvent(c, []*resp.RespValue{
+	AddArrayReplyEvent(c, []*resp.RespValue{
 		resp.MakeInt(rank),
 		resp.MakeBulkString(strconv.Itoa(node.Score)),
 	})
@@ -333,7 +332,7 @@ func (e zsetCmdExecutor) parseZRangeCmdArgs(cmdArgs []*resp.RespValue, key *stri
 	return nil
 }
 
-func (e zsetCmdExecutor) executeZRangeCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) executeZRangeCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key           string
 		start         int
@@ -342,18 +341,18 @@ func (e zsetCmdExecutor) executeZRangeCmd(c *event.ClientInfo, cmdArgs []*resp.R
 	)
 	err := e.parseZRangeCmdArgs(cmdArgs, &key, &start, &stop, &withScoreFlag)
 	if err != nil {
-		event.AddErrorReplyEvent(c, err)
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 	nodes := sortedSet.FindByRanks(start, stop)
 	if nodes == nil {
-		event.AddNullBulkStringReplyEvent(c)
+		AddNullBulkStringReplyEvent(c)
 		return
 	}
 
@@ -365,10 +364,10 @@ func (e zsetCmdExecutor) executeZRangeCmd(c *event.ClientInfo, cmdArgs []*resp.R
 			res = append(res, resp.MakeBulkString(strconv.Itoa(node.Score)))
 		}
 	}
-	event.AddArrayReplyEvent(c, res)
+	AddArrayReplyEvent(c, res)
 }
 
-func (e zsetCmdExecutor) Execute(c *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
+func (e zsetCmdExecutor) Execute(c *ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
 	switch cmdName {
 	case "ZSCORE":
 		e.executeZScoreCmd(c, cmdArgs)

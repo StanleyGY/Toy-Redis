@@ -4,8 +4,7 @@ import (
 	"log"
 
 	"github.com/stanleygy/toy-redis/app/cmdexec"
-	"github.com/stanleygy/toy-redis/app/event"
-	"github.com/stanleygy/toy-redis/app/parser"
+	"github.com/stanleygy/toy-redis/app/resp"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,11 +81,32 @@ func processConnReadRequest(connfd int, epoller *Epoller) {
 		return
 	}
 
-	c := &event.ClientInfo{
-		ConnFd: connfd,
+	clientRequest := resp.Parse(buf)
+	c := &cmdexec.ClientInfo{
+		ConnFd:        connfd,
+		ClientRequest: clientRequest,
 	}
-	clientRequest := parser.Parse(buf)
 	cmdexec.Execute(c, clientRequest)
+}
+
+func processPostCmdExecutionEvents() {
+	for _, ev := range cmdexec.EventBus {
+		switch ev.Type {
+		case cmdexec.EventReplyToClient:
+			_, err := unix.Write(ev.Client.ConnFd, ev.Resp.ToByteArray())
+			if err != nil {
+				log.Println("Error writing Resp: ", err.Error())
+			}
+		case cmdexec.EventKeySpaceNotify:
+			// Notify clients waiting on key space events
+			// Queue unblocked clients for reprocessing
+		}
+	}
+	cmdexec.Reset()
+}
+
+func reprocessUnblockedClients() {
+
 }
 
 func startServer() {
@@ -97,6 +117,7 @@ func startServer() {
 		cmdexec.HandleBlockedClientsTimeout()
 
 		// Listen for connection establishing events and other requests
+		// TODO: caculate the timeout
 		events, err := epoller.GetEvents(-1)
 		if err != nil {
 			log.Println("Error epoller waiting for events: ", err.Error())
@@ -110,19 +131,8 @@ func startServer() {
 			}
 		}
 
-		// Process events
-		for _, ev := range event.EventBus {
-			switch ev.Type {
-			case event.EventReplyToClient:
-				_, err = unix.Write(ev.Client.ConnFd, ev.Resp.ToByteArray())
-				if err != nil {
-					log.Println("Error writing Resp: ", err.Error())
-				}
-			case event.EventKeySpaceNotify:
-				// Notify clients waiting on key space events
-			}
-		}
-		event.Reset()
+		processPostCmdExecutionEvents()
+		reprocessUnblockedClients()
 	}
 }
 
