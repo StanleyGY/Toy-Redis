@@ -7,6 +7,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	EpollTimeoutDefault = 50
+)
+
 type Epoller struct {
 	ServerFd int
 	EpollFd  int

@@ -90,6 +90,8 @@ func processConnReadRequest(connfd int, epoller *Epoller) {
 }
 
 func processPostCmdExecutionEvents() {
+	// TODO: in the future, there will be read and write events
+	// It will be handled differently
 	for _, ev := range cmdexec.EventBus {
 		switch ev.Type {
 		case cmdexec.EventReplyToClient:
@@ -108,15 +110,21 @@ func startServer() {
 	cmdexec.MakeBlockList()
 
 	for {
-		cmdexec.HandleBlockedClientsTimeout()
+		// Calculate time elapsed before next client timeout event
+		nextClientTimeout := cmdexec.GetEarliestTimeoutUnix()
+		epollTimeout := EpollTimeoutDefault
+		if nextClientTimeout != -1 && nextClientTimeout < epollTimeout {
+			epollTimeout = nextClientTimeout
+		}
 
 		// Listen for connection establishing events and other requests
-		// TODO: calculate the timeout
-		events, err := epoller.GetEvents(100)
+		events, err := epoller.GetEvents(epollTimeout)
 		if err != nil {
 			log.Println("Error epoller waiting for events: ", err.Error())
 			continue
 		}
+		cmdexec.HandleBlockedClientsTimeout()
+
 		for _, ev := range events {
 			if ev.Fd == int32(epoller.ServerFd) {
 				processConnAcceptRequest(epoller)
@@ -124,6 +132,7 @@ func startServer() {
 				processConnReadRequest(int(ev.Fd), epoller)
 			}
 		}
+
 		cmdexec.ReprocessPendingClients()
 		processPostCmdExecutionEvents()
 	}

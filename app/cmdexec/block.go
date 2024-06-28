@@ -23,13 +23,13 @@ type BlockKey struct {
 // many blocking clients.
 var clientsTimeoutTable *algo.RadixTree
 
-var blockClients map[int]bool
+var blockClients map[int]string
 var blockClientsOnKeySpace map[BlockKey][]*ClientInfo
 var pendingClients []*ClientInfo
 
 func MakeBlockList() {
 	clientsTimeoutTable = algo.MakeRadixTree()
-	blockClients = make(map[int]bool)
+	blockClients = make(map[int]string)
 	blockClientsOnKeySpace = make(map[BlockKey][]*ClientInfo)
 	pendingClients = make([]*ClientInfo, 0)
 }
@@ -43,14 +43,29 @@ func HandleBlockedClientsTimeout() {
 	for _, r := range searchResults {
 		// Check if client is still being blocked
 		c := r.Node.Value.(*ClientInfo)
-		if blockClients[c.ConnFd] {
-			// Send a null reply if a timeout occurs
-			AddNullBulkStringReplyEvent(c)
-			log.Println("A client timeout occurs:", c.ConnFd)
-		}
-		// Remove from timeout table
-		clientsTimeoutTable.Remove(r.Id)
+		// Send a null reply when a timeout occurs
+		AddNullBulkStringReplyEvent(c)
+		UnblockClient(c)
+		log.Println("A client timeout occurs:", c.ConnFd)
 	}
+}
+
+func GetEarliestTimeoutUnix() int {
+	timeoutStartId := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	searchResults := clientsTimeoutTable.SearchByRange(timeoutStartId, ":", 1)
+	if len(searchResults) == 0 {
+		return -1
+	}
+
+	// Calculate time elapsed between now and the client timeout
+	r := searchResults[0]
+	timeoutMs, err := strconv.ParseInt(r.Id, 10, 64)
+	if err != nil {
+		log.Println(err.Error())
+		return -1
+	}
+	nowMs := time.Now().UnixMilli()
+	return int(timeoutMs - nowMs)
 }
 
 func ReprocessPendingClients() {
@@ -62,7 +77,11 @@ func ReprocessPendingClients() {
 }
 
 func UnblockClient(c *ClientInfo) {
-	delete(blockClients, c.ConnFd)
+	timeoutId, found := blockClients[c.ConnFd]
+	if found {
+		delete(blockClients, c.ConnFd)
+		clientsTimeoutTable.Remove(timeoutId)
+	}
 }
 
 func NotifyBlockedClientsOnKeySpace(bkey *BlockKey) {
@@ -81,7 +100,6 @@ func BlockClientForKey(c *ClientInfo, bkey *BlockKey, timeoutMs int) {
 	if found {
 		return
 	}
-	blockClients[c.ConnFd] = true
 
 	// Add client to key space block list
 	_, found = blockClientsOnKeySpace[*bkey]
@@ -91,6 +109,7 @@ func BlockClientForKey(c *ClientInfo, bkey *BlockKey, timeoutMs int) {
 	blockClientsOnKeySpace[*bkey] = append(blockClientsOnKeySpace[*bkey], c)
 
 	// Add client to timeout table
-	unixMs := strconv.FormatInt(time.Now().Add(time.Millisecond*time.Duration(timeoutMs)).UnixMilli(), 10)
-	clientsTimeoutTable.Insert(unixMs, c)
+	timeoutId := strconv.FormatInt(time.Now().Add(time.Millisecond*time.Duration(timeoutMs)).UnixMilli(), 10)
+	blockClients[c.ConnFd] = timeoutId
+	clientsTimeoutTable.Insert(timeoutId, c)
 }
