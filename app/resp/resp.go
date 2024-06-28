@@ -2,7 +2,6 @@ package resp
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 )
 
@@ -77,8 +76,6 @@ func (rv RespValue) writeType(buf *bytes.Buffer) {
 func (rv RespValue) ToByteArray() []byte {
 	var buf bytes.Buffer
 	rv.writeType(&buf)
-
-	fmt.Println(buf.String())
 	return buf.Bytes()
 }
 

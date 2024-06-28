@@ -1,30 +1,85 @@
 package main
 
 import (
-	"io"
 	"log"
-	"net"
 
 	"github.com/stanleygy/toy-redis/app/cmdexec"
 	"github.com/stanleygy/toy-redis/app/parser"
 	"github.com/stanleygy/toy-redis/app/resp"
+	"golang.org/x/sys/unix"
 )
 
-func processIncomingRequest(epoller *Epoller, conn net.Conn) {
+func initListeners() *Epoller {
+	epoller, err := MakeEpoller()
+	if err != nil {
+		panic(err)
+	}
+
+	serverFd, err := createServerFd()
+	if err != nil {
+		panic(err)
+	}
+
+	err = epoller.AddListener(serverFd)
+	if err != nil {
+		panic(err)
+	}
+	return epoller
+}
+
+func createServerFd() (int, error) {
+	// Create a non-blocking fd for requests
+	serverFd, err := unix.Socket(unix.AF_INET, unix.O_NONBLOCK|unix.SOCK_STREAM, 0)
+	if err != nil {
+		return 0, err
+	}
+	err = unix.SetNonblock(serverFd, true)
+	if err != nil {
+		return 0, err
+	}
+
+	// Bind server fd to addr and port
+	serverAddr := &unix.SockaddrInet4{
+		Port: 6379,
+		Addr: [4]byte{0, 0, 0, 0},
+	}
+	err = unix.Bind(serverFd, serverAddr)
+	if err != nil {
+		return 0, err
+	}
+	err = unix.Listen(serverFd, 1024)
+	if err != nil {
+		return 0, err
+	}
+	return serverFd, nil
+}
+
+func processConnAcceptRequest(epoller *Epoller) {
+	connfd, _, err := unix.Accept(epoller.ServerFd)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	epoller.AddConn(connfd)
+}
+
+func processConnReadRequest(connfd int, epoller *Epoller) {
 	buf := make([]byte, 1024)
 
-	_, err := conn.Read(buf)
+	numRead, err := unix.Read(connfd, buf)
 	if err != nil {
-		if err == io.EOF {
-			err := epoller.Remove(conn)
-			if err != nil {
-				log.Println("Error closing connection: ", err.Error())
-			} else {
-				log.Println("Good bye!")
-			}
-			return
-		}
 		log.Println("Error reading from connection: ", err.Error())
+		return
+	}
+	if numRead == 0 {
+		// Connection closed for this socket
+		err := epoller.RemoveConn(connfd)
+		if err != nil {
+			log.Println("Error closing connection: ", err.Error())
+		} else {
+			log.Println("Good bye!")
+		}
+		return
 	}
 
 	var outResp *resp.RespValue
@@ -44,49 +99,29 @@ func processIncomingRequest(epoller *Epoller, conn net.Conn) {
 	}
 
 netwrite:
-	conn.Write(outResp.ToByteArray())
+	_, err = unix.Write(connfd, outResp.ToByteArray())
+	if err != nil {
+		log.Println("Error writing Resp: ", err.Error())
+	}
 }
 
 func startServer() {
-	l, err := net.Listen("tcp", "0.0.0.0:6379")
-	if err != nil {
-		panic(err)
-	}
-
+	epoller := initListeners()
 	cmdexec.InitRedisDb()
 
-	epoller, err := MakeEpoller()
-	if err != nil {
-		panic(err)
-	}
-
-	// Start a separate go routine to listen for events that are ready for processing
-	go func() {
-		for {
-			conns, err := epoller.Wait()
-
-			if err != nil {
-				log.Println("Error epoller waiting for events: ", err.Error())
-				continue
-			}
-			for _, conn := range conns {
-				processIncomingRequest(epoller, conn)
-			}
-		}
-	}()
-
-	// Infinite loop for accepting connetions and adding to epoll queue
+	// Listen for connection establishing events and other requests
 	for {
-		conn, err := l.Accept()
+		events, err := epoller.GetEvents()
 		if err != nil {
-			log.Println("Error accepting connection: ", err.Error())
+			log.Println("Error epoller waiting for events: ", err.Error())
 			continue
 		}
-
-		err = epoller.AddConn(conn)
-		if err != nil {
-			log.Println("Error accepting connection: ", err.Error())
-			continue
+		for _, ev := range events {
+			if ev.Fd == int32(epoller.ServerFd) {
+				processConnAcceptRequest(epoller)
+			} else {
+				processConnReadRequest(int(ev.Fd), epoller)
+			}
 		}
 	}
 }
