@@ -1,8 +1,10 @@
 package cmdexec
 
 import (
+	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stanleygy/toy-redis/app/algo"
@@ -11,16 +13,36 @@ import (
 
 type StreamCmdExecutor struct{}
 
+func (e StreamCmdExecutor) generateStreamId(stream *Stream, id *string) error {
+	if *id == "*" {
+		// Generate a stream ID
+		unixMs := time.Now().UnixMilli()
+		if unixMs == stream.LastId.Ms {
+			err := stream.LastId.Incr()
+			if err != nil {
+				return err
+			}
+		} else {
+			stream.LastId.Ms = unixMs
+			stream.LastId.Seq = 0
+		}
+		*id = stream.LastId.ToString()
+		return nil
+	}
+	// TODO: support customized stream ID
+	return ErrInvalidArgs
+}
+
 /*
-Syntax: XADD key [MAXLEN ~ threshold [LIMIT count]] <*> field value [field value ...]
+Syntax: XADD key <*> field value [field value ...]
 Example:
-  - XADD mystream MAXLEN ~ 1000 *
+  - XADD mystream *
 
 Reply:
   - Bulk string reply: the ID of the added entry
 */
 func (e StreamCmdExecutor) parseXAddCmdArgs(cmdArgs []*resp.RespValue, key *string, id *string, fieldValues *[]string) error {
-	if len(cmdArgs) < 2 {
+	if len(cmdArgs) < 4 {
 		return ErrInvalidArgs
 	}
 
@@ -37,26 +59,6 @@ func (e StreamCmdExecutor) parseXAddCmdArgs(cmdArgs []*resp.RespValue, key *stri
 		*fieldValues = append(*fieldValues, cmdArgs[i+1].BulkStr)
 	}
 	return nil
-}
-
-func (e StreamCmdExecutor) generateStreamId(stream *Stream, id *string) error {
-	if *id == "*" {
-		// Generate a stream ID
-		unixMs := time.Now().UnixMilli()
-		if unixMs == stream.LastId.Ms {
-			if stream.LastId.Seq == math.MaxUint {
-				return ErrOverflow
-			}
-			stream.LastId.Seq++
-		} else {
-			stream.LastId.Ms = unixMs
-			stream.LastId.Seq = 0
-		}
-		*id = stream.LastId.ToString()
-		return nil
-	}
-	// TODO: support customized stream ID
-	return ErrInvalidArgs
 }
 
 func (e StreamCmdExecutor) executeXAddCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
@@ -95,6 +97,8 @@ func (e StreamCmdExecutor) executeXAddCmd(c *ClientInfo, cmdArgs []*resp.RespVal
 	stream.Radix.Insert(id, fieldValues)
 	stream.Radix.Visualize()
 	AddBulkStringReplyEvent(c, id)
+
+	NotifyBlockedClientsOnKeySpace(&BlockKey{Source: BlockOnStream, Key: key})
 }
 
 /*
@@ -121,12 +125,13 @@ func (e StreamCmdExecutor) parseXRangeCmdArgs(cmdArgs []*resp.RespValue, key *st
 	return nil
 }
 
-func (e StreamCmdExecutor) generateXRangeCmdReplyEvent(c *ClientInfo, searchResults []*algo.RadixSearchResult) {
+func (e StreamCmdExecutor) generateSearchResultsReplyEvent(c *ClientInfo, searchResults []*algo.RadixSearchResult) {
 	resps := make([]*resp.RespValue, len(searchResults))
 
 	for i, result := range searchResults {
-		values := make([]*resp.RespValue, len(result.Node.Values))
-		for j, v := range result.Node.Values {
+		fieldValues := result.Node.Value.([]string)
+		values := make([]*resp.RespValue, len(fieldValues))
+		for j, v := range fieldValues {
 			values[j] = resp.MakeBulkString(v)
 		}
 
@@ -173,7 +178,7 @@ func (e StreamCmdExecutor) executeXRangeCmd(c *ClientInfo, cmdArgs []*resp.RespV
 		end = ":"
 	}
 	searchResults := stream.Radix.SearchByRange(start, end, count)
-	e.generateXRangeCmdReplyEvent(c, searchResults)
+	e.generateSearchResultsReplyEvent(c, searchResults)
 }
 
 /*
@@ -181,13 +186,55 @@ Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key id  TODO: support m
 Reply:
   - Array reply: a list of stream entries with IDs matching the specified range
 */
+func (e StreamCmdExecutor) parseXReadCmdArgs(cmdArgs []*resp.RespValue, count *int, timeout *int, key *string, id *string) error {
+	var err error
+	i := 0
+
+	// Process options
+	for ; i < len(cmdArgs) && cmdArgs[i].BulkStr != "STREAMS"; i++ {
+		option := strings.ToUpper(cmdArgs[i].BulkStr)
+
+		if option == "COUNT" || option == "BLOCK" {
+			if i+1 == len(cmdArgs) {
+				return ErrInvalidArgs
+			}
+			if option == "COUNT" {
+				*count, err = strconv.Atoi(cmdArgs[i+1].BulkStr)
+			} else {
+				*timeout, err = strconv.Atoi(cmdArgs[i+1].BulkStr)
+			}
+			if err != nil {
+				return err
+			}
+			i++
+		}
+	}
+
+	if i+2 >= len(cmdArgs) {
+		return ErrInvalidArgs
+	}
+
+	// Process key and id
+	*key = cmdArgs[i+1].BulkStr
+	*id = cmdArgs[i+2].BulkStr
+
+	return nil
+}
+
 func (e StreamCmdExecutor) executeXReadCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
-		count int
-		block int = -1
-		key   string
-		id    string
+		count   int = math.MaxInt
+		timeout int = -1
+		key     string
+		startId string
 	)
+	err := e.parseXReadCmdArgs(cmdArgs, &count, &timeout, &key, &startId)
+	if err != nil {
+		AddErrorReplyEvent(c, err)
+		return
+	}
+
+	fmt.Println("XREAD: ", count, timeout, key, startId)
 
 	// Loop up the stream at key
 	stream, found := db.StreamStore[key]
@@ -196,13 +243,34 @@ func (e StreamCmdExecutor) executeXReadCmd(c *ClientInfo, cmdArgs []*resp.RespVa
 		return
 	}
 
-	searchResults := stream.Radix.SearchByRange(id, ":", count)
-	if len(searchResults) == 0 && block != -1 {
-		BlockClientForKey(c, BlockOnStream, key)
+	// The start id is exclusive, so incr the start id to make it inclusive for the search
+	sid, err := ParseStreamID(startId)
+	if err != nil {
+		AddErrorReplyEvent(c, err)
+		return
+	}
+	err = sid.Incr()
+	if err != nil {
+		AddErrorReplyEvent(c, err)
 		return
 	}
 
-	// TODO: find something. generate reply events
+	// Actually perform the search
+	searchResults := stream.Radix.SearchByRange(sid.ToString(), ":", count)
+
+	if len(searchResults) == 0 {
+		if timeout != -1 {
+			// If no results are returned, and client specify block option,
+			// Block the client until a key space occurs or client times out
+			BlockClientForKey(c, &BlockKey{Source: BlockOnStream, Key: key}, timeout)
+		} else {
+			// Immediately reply to client
+			AddArrayReplyEvent(c, []*resp.RespValue{})
+		}
+		return
+	}
+	UnblockClient(c)
+	e.generateSearchResultsReplyEvent(c, searchResults)
 }
 
 func (e StreamCmdExecutor) Execute(c *ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {

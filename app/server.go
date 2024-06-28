@@ -97,28 +97,22 @@ func processPostCmdExecutionEvents() {
 			if err != nil {
 				log.Println("Error writing Resp: ", err.Error())
 			}
-		case cmdexec.EventKeySpaceNotify:
-			// Notify clients waiting on key space events
-			// Queue unblocked clients for reprocessing
 		}
 	}
 	cmdexec.Reset()
 }
 
-func reprocessUnblockedClients() {
-
-}
-
 func startServer() {
 	epoller := initListeners()
 	cmdexec.InitRedisDb()
+	cmdexec.MakeBlockList()
 
 	for {
 		cmdexec.HandleBlockedClientsTimeout()
 
 		// Listen for connection establishing events and other requests
-		// TODO: caculate the timeout
-		events, err := epoller.GetEvents(-1)
+		// TODO: calculate the timeout
+		events, err := epoller.GetEvents(100)
 		if err != nil {
 			log.Println("Error epoller waiting for events: ", err.Error())
 			continue
@@ -130,9 +124,8 @@ func startServer() {
 				processConnReadRequest(int(ev.Fd), epoller)
 			}
 		}
-
+		cmdexec.ReprocessPendingClients()
 		processPostCmdExecutionEvents()
-		reprocessUnblockedClients()
 	}
 }
 

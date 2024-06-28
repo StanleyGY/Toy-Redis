@@ -3,21 +3,16 @@ package cmdexec
 import "github.com/stanleygy/toy-redis/app/resp"
 
 const (
-	EventReplyToClient  = 1
-	EventKeySpaceNotify = 2
+	EventReplyToClient = 1
 )
 
 var EventBus []*Event
-
-type ClientInfo struct {
-	ConnFd        int
-	ClientRequest *resp.RespValue
-}
 
 type Event struct {
 	Type   int
 	Client *ClientInfo
 	Resp   *resp.RespValue
+	BKey   *BlockKey
 }
 
 func MakeEventBus() {
@@ -62,10 +57,4 @@ func AddErrorReplyEvent(c *ClientInfo, err error) {
 
 func AddArrayReplyEvent(c *ClientInfo, arr []*resp.RespValue) {
 	AddReplyEvent(c, &resp.RespValue{DataType: resp.TypeArrays, Array: arr})
-}
-
-func AddKeySpaceEvent() {
-	AddEvent(&Event{
-		Type: EventKeySpaceNotify,
-	})
 }

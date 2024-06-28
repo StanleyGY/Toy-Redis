@@ -1,7 +1,11 @@
 package cmdexec
 
 import (
+	"errors"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stanleygy/toy-redis/app/algo"
@@ -15,11 +19,39 @@ type DictStoreValue struct {
 
 type StreamID struct {
 	Ms  int64
-	Seq uint
+	Seq int
+}
+
+func (s *StreamID) Incr() error {
+	// Increment the stream ID by one
+	if s.Seq == math.MaxInt {
+		return ErrOverflow
+	}
+	s.Seq++
+	return nil
 }
 
 func (s StreamID) ToString() string {
 	return fmt.Sprintf("%d-%d", s.Ms, s.Seq)
+}
+
+func ParseStreamID(id string) (*StreamID, error) {
+	var ms int64
+	var seq int
+	var err error
+
+	parts := strings.Split(id, "-")
+	if len(parts) < 1 || len(parts) > 2 {
+		return nil, errors.New("failed to parse stream id")
+	}
+
+	ms, err = strconv.ParseInt(parts[0], 10, 64)
+	if len(parts) == 1 {
+		return &StreamID{Ms: ms}, err
+	}
+
+	seq, err = strconv.Atoi(parts[1])
+	return &StreamID{Ms: ms, Seq: seq}, err
 }
 
 type Stream struct {

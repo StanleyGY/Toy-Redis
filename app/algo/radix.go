@@ -20,8 +20,8 @@ type RaxNode struct {
 	From     *RaxNode
 	FromEdge *RaxNodeEdge
 
-	Edges  []*RaxNodeEdge
-	Values []string
+	Edges []*RaxNodeEdge
+	Value interface{}
 }
 
 func (n *RaxNode) GetEdge(prefix string) *RaxNodeEdge {
@@ -73,14 +73,14 @@ func (n *RaxNode) AddEdge(prefix string, destNode *RaxNode) {
 }
 
 func (n *RaxNode) Consolidate() {
-	if len(n.Edges) != 1 || n.Values != nil {
+	if len(n.Edges) != 1 || n.Value != nil {
 		return
 	}
 
 	// Consolidate current node with my only child node
 	child := n.Edges[0].DestNode
 	n.Edges = child.Edges
-	n.Values = child.Values
+	n.Value = child.Value
 	n.FromEdge.Prefix = n.FromEdge.Prefix + child.FromEdge.Prefix
 
 	for _, edge := range child.Edges {
@@ -96,8 +96,8 @@ type RadixTree struct {
 func MakeRadixTree() *RadixTree {
 	return &RadixTree{
 		Head: &RaxNode{
-			Edges:  make([]*RaxNodeEdge, 0),
-			Values: nil,
+			Edges: make([]*RaxNodeEdge, 0),
+			Value: nil,
 		},
 		NumElems: 0,
 	}
@@ -118,7 +118,7 @@ func (r *RadixTree) searchByRange(startId string, endId string, limit int, curr 
 		return
 	}
 
-	if curr.Values != nil {
+	if curr.Value != nil {
 		*results = append(*results, &RadixSearchResult{
 			Id:   currPrefix,
 			Node: curr,
@@ -177,22 +177,22 @@ func (r *RadixTree) searchNode(id string) *RaxNode {
 	return curr
 }
 
-func (r *RadixTree) Search(id string) []string {
+func (r *RadixTree) Search(id string) interface{} {
 	curr := r.searchNode(id)
-	if curr.Values == nil {
+	if curr.Value == nil {
 		return nil
 	}
-	return curr.Values
+	return curr.Value
 }
 
 func (r *RadixTree) Remove(id string) bool {
 	curr := r.searchNode(id)
-	if curr.Values == nil {
+	if curr.Value == nil {
 		// Nothing to remove if this not a value node
 		return false
 	}
 
-	curr.Values = nil
+	curr.Value = nil
 
 	if len(curr.Edges) == 1 && curr.From != nil {
 		// If curr node has only one edge, consolidate with its child
@@ -204,14 +204,14 @@ func (r *RadixTree) Remove(id string) bool {
 
 		// If parent node is a non-value node and has only one edge, consolidate with its child.
 		// The invariant is that no two non-value nodes can be neighbors if both of them has at most one edge.
-		if len(prev.Edges) == 1 && prev.Values == nil && prev.From != nil {
+		if len(prev.Edges) == 1 && prev.Value == nil && prev.From != nil {
 			prev.Consolidate()
 		}
 	}
 	return true
 }
 
-func (r *RadixTree) Insert(id string, values []string) bool {
+func (r *RadixTree) Insert(id string, value interface{}) bool {
 	curr := r.Head
 	for {
 		edge := curr.GetEdge(id)
@@ -229,7 +229,7 @@ func (r *RadixTree) Insert(id string, values []string) bool {
 							 D - [*]
 		*/
 		if edge == nil {
-			curr.AddEdge(id, &RaxNode{Values: values})
+			curr.AddEdge(id, &RaxNode{Value: value})
 			r.NumElems++
 			return true
 		}
@@ -243,12 +243,12 @@ func (r *RadixTree) Insert(id string, values []string) bool {
 
 			// If prefix to search is exhausted
 			if len(id) == 0 {
-				if curr.Values != nil {
-					curr.Values = values
+				if curr.Value != nil {
+					curr.Value = value
 					return false
 				}
 
-				curr.Values = values
+				curr.Value = value
 				r.NumElems++
 				return true
 			}
@@ -286,7 +286,7 @@ func (r *RadixTree) Insert(id string, values []string) bool {
 		*/
 		if commonPrefixIdx+1 == len(id) && commonPrefixIdx+1 < len(edge.Prefix) {
 			// Handle case 2
-			newNode := &RaxNode{Values: values}
+			newNode := &RaxNode{Value: value}
 			newNode.AddEdge(edge.Prefix[commonPrefixIdx+1:], edge.DestNode)
 			curr.DeleteEdge(edge.Prefix)
 			curr.AddEdge(commonPrefix, newNode)
@@ -297,7 +297,7 @@ func (r *RadixTree) Insert(id string, values []string) bool {
 		// Handle case 1
 		splitNode := &RaxNode{}
 		splitNode.AddEdge(edge.Prefix[commonPrefixIdx+1:], edge.DestNode)
-		splitNode.AddEdge(id[commonPrefixIdx+1:], &RaxNode{Values: values})
+		splitNode.AddEdge(id[commonPrefixIdx+1:], &RaxNode{Value: value})
 		curr.DeleteEdge(edge.Prefix)
 		curr.AddEdge(commonPrefix, splitNode)
 		r.NumElems++
@@ -310,7 +310,7 @@ func (r *RadixTree) visualizeDFS(n *RaxNode, level int) {
 		for i := 0; i < level; i++ {
 			fmt.Printf("  ")
 		}
-		if edge.DestNode.Values != nil {
+		if edge.DestNode.Value != nil {
 			fmt.Printf("[%s]\n", edge.Prefix)
 		} else {
 			fmt.Println(edge.Prefix)
