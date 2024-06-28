@@ -67,13 +67,26 @@ func (el *Epoller) RemoveConn(connfd int) error {
 
 func (el *Epoller) GetEvents(timeout int) ([]unix.EpollEvent, error) {
 	// Wait until some events are ready for processing
+	var numEvents int
+	var err error
+
 	maxNumEvents := 128
 	events := make([]unix.EpollEvent, maxNumEvents)
-	numEvents, err := unix.EpollWait(el.EpollFd, events, timeout)
+	for {
+		numEvents, err = unix.EpollWait(el.EpollFd, events, timeout)
+		// see remediation on EINTR error
+		// https://stackoverflow.com/questions/6870158/epoll-wait-fails-due-to-eintr-how-to-remedy-this
+		if err != unix.EINTR {
+			break
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
 	if numEvents < maxNumEvents {
 		events = events[:numEvents]
 	}
-	return events, err
+	return events, nil
 }
 
 func MakeEpoller() (*Epoller, error) {
