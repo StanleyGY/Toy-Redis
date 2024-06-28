@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-type SearchResult struct {
+type RadixSearchResult struct {
 	Node *RaxNode
 	Id   string
 }
@@ -113,13 +113,13 @@ func getLongestCommonPrefix(s1, s2 string) int {
 	return idx - 1
 }
 
-func (r *RadixTree) searchByRange(startId string, endId string, limit int, curr *RaxNode, currPrefix string, results *[]*SearchResult) {
+func (r *RadixTree) searchByRange(startId string, endId string, limit int, curr *RaxNode, currPrefix string, results *[]*RadixSearchResult) {
 	if curr == nil {
 		return
 	}
 
 	if curr.Values != nil {
-		*results = append(*results, &SearchResult{
+		*results = append(*results, &RadixSearchResult{
 			Id:   currPrefix,
 			Node: curr,
 		})
@@ -151,14 +151,14 @@ func (r *RadixTree) searchByRange(startId string, endId string, limit int, curr 
 	}
 }
 
-func (r *RadixTree) SearchByRange(startId string, endId string, limit int) []*SearchResult {
+func (r *RadixTree) SearchByRange(startId string, endId string, limit int) []*RadixSearchResult {
 	// Search range is inclusive at both ends
-	var results []*SearchResult
+	var results []*RadixSearchResult
 	r.searchByRange(startId, endId, limit, r.Head, "", &results)
 	return results
 }
 
-func (r *RadixTree) Search(id string) []string {
+func (r *RadixTree) searchNode(id string) *RaxNode {
 	curr := r.Head
 	for len(id) > 0 {
 		edge := curr.GetEdge(id)
@@ -174,6 +174,11 @@ func (r *RadixTree) Search(id string) []string {
 		id = id[commonPrefixIdx+1:]
 		curr = edge.DestNode
 	}
+	return curr
+}
+
+func (r *RadixTree) Search(id string) []string {
+	curr := r.searchNode(id)
 	if curr.Values == nil {
 		return nil
 	}
@@ -181,22 +186,7 @@ func (r *RadixTree) Search(id string) []string {
 }
 
 func (r *RadixTree) Remove(id string) bool {
-	curr := r.Head
-	for len(id) > 0 {
-		edge := curr.GetEdge(id)
-
-		if edge == nil {
-			return false
-		}
-
-		commonPrefixIdx := getLongestCommonPrefix(edge.Prefix, id)
-		if commonPrefixIdx+1 < len(edge.Prefix) {
-			return false
-		}
-
-		id = id[commonPrefixIdx+1:]
-		curr = edge.DestNode
-	}
+	curr := r.searchNode(id)
 	if curr.Values == nil {
 		// Nothing to remove if this not a value node
 		return false

@@ -79,9 +79,14 @@ func (rv RespValue) ToByteArray() []byte {
 	return buf.Bytes()
 }
 
+func MakeInt(v int) *RespValue {
+	return &RespValue{DataType: TypeIntegers, Int: v}
+}
+
+func MakeBulkString(msg string) *RespValue {
+	return &RespValue{DataType: TypeBulkStrings, BulkStr: msg}
+}
+
 func MakeErorr(msg string) *RespValue {
-	return &RespValue{
-		DataType:  TypeSimpleErrors,
-		SimpleStr: msg,
-	}
+	return &RespValue{DataType: TypeSimpleErrors, SimpleStr: msg}
 }

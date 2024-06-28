@@ -100,7 +100,11 @@ func parseType(r *bytes.Reader) (*resp.RespValue, error) {
 	return &val, err
 }
 
-func Parse(buf []byte) (*resp.RespValue, error) {
+func Parse(buf []byte) *resp.RespValue {
 	r := bytes.NewReader(buf)
-	return parseType(r)
+	resp, err := parseType(r)
+	if err != nil {
+		return nil
+	}
+	return resp
 }

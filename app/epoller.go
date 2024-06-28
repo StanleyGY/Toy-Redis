@@ -65,11 +65,11 @@ func (el *Epoller) RemoveConn(connfd int) error {
 	return nil
 }
 
-func (el *Epoller) GetEvents() ([]unix.EpollEvent, error) {
+func (el *Epoller) GetEvents(timeout int) ([]unix.EpollEvent, error) {
 	// Wait until some events are ready for processing
 	maxNumEvents := 128
 	events := make([]unix.EpollEvent, maxNumEvents)
-	numEvents, err := unix.EpollWait(el.EpollFd, events, -1)
+	numEvents, err := unix.EpollWait(el.EpollFd, events, timeout)
 	if numEvents < maxNumEvents {
 		events = events[:numEvents]
 	}

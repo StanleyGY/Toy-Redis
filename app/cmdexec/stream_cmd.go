@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stanleygy/toy-redis/app/algo"
+	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -59,7 +60,7 @@ func (e StreamCmdExecutor) generateStreamId(stream *Stream, id *string) error {
 	return ErrInvalidArgs
 }
 
-func (e StreamCmdExecutor) executeXAddCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+func (e StreamCmdExecutor) executeXAddCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key         string
 		id          string
@@ -67,7 +68,8 @@ func (e StreamCmdExecutor) executeXAddCmd(cmdArgs []*resp.RespValue) (*resp.Resp
 	)
 	err := e.parseXAddCmdArgs(cmdArgs, &key, &id, &fieldValues)
 	if err != nil {
-		return nil, err
+		event.AddErrorReplyEvent(c, err)
+		return
 	}
 
 	// Loop up the stream at key
@@ -87,12 +89,13 @@ func (e StreamCmdExecutor) executeXAddCmd(cmdArgs []*resp.RespValue) (*resp.Resp
 	// Generate stream ID
 	err = e.generateStreamId(stream, &id)
 	if err != nil {
-		return nil, err
+		event.AddErrorReplyEvent(c, err)
+		return
 	}
 
 	stream.Radix.Insert(id, fieldValues)
 	stream.Radix.Visualize()
-	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: id}, nil
+	event.AddBulkStringReplyEvent(c, id)
 }
 
 /*
@@ -104,7 +107,6 @@ func (e StreamCmdExecutor) parseXRangeCmdArgs(cmdArgs []*resp.RespValue, key *st
 	if len(cmdArgs) < 3 || len(cmdArgs) > 4 {
 		return ErrInvalidArgs
 	}
-
 	var err error
 
 	*key = cmdArgs[0].BulkStr
@@ -120,7 +122,28 @@ func (e StreamCmdExecutor) parseXRangeCmdArgs(cmdArgs []*resp.RespValue, key *st
 	return nil
 }
 
-func (e StreamCmdExecutor) executeXRange(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+func (e StreamCmdExecutor) generateXRangeCmdReplyEvent(c *event.ClientInfo, searchResults []*algo.RadixSearchResult) {
+	resps := make([]*resp.RespValue, len(searchResults))
+
+	for i, result := range searchResults {
+		values := make([]*resp.RespValue, len(result.Node.Values))
+		for j, v := range result.Node.Values {
+			values[j] = resp.MakeBulkString(v)
+		}
+
+		entry := &resp.RespValue{
+			DataType: resp.TypeArrays,
+			Array: []*resp.RespValue{
+				resp.MakeBulkString(result.Id),             // stream id
+				{DataType: resp.TypeArrays, Array: values}, // field and values
+			},
+		}
+		resps[i] = entry
+	}
+	event.AddArrayReplyEvent(c, resps)
+}
+
+func (e StreamCmdExecutor) executeXRangeCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key   string
 		start string
@@ -130,13 +153,15 @@ func (e StreamCmdExecutor) executeXRange(cmdArgs []*resp.RespValue) (*resp.RespV
 
 	err := e.parseXRangeCmdArgs(cmdArgs, &key, &start, &end, &count)
 	if err != nil {
-		return nil, err
+		event.AddErrorReplyEvent(c, err)
+		return
 	}
 
 	// Loop up the stream at key
 	stream, found := db.StreamStore[key]
 	if !found {
-		return &resp.RespValue{DataType: resp.TypeArrays, Array: []*resp.RespValue{}}, nil
+		event.AddArrayReplyEvent(c, []*resp.RespValue{})
+		return
 	}
 
 	// Perform the search
@@ -149,40 +174,43 @@ func (e StreamCmdExecutor) executeXRange(cmdArgs []*resp.RespValue) (*resp.RespV
 		end = ":"
 	}
 	searchResults := stream.Radix.SearchByRange(start, end, count)
-
-	// Generate outputs
-	var resps []*resp.RespValue = make([]*resp.RespValue, len(searchResults))
-
-	for i, result := range searchResults {
-		values := make([]*resp.RespValue, len(result.Node.Values))
-		for j, v := range result.Node.Values {
-			values[j] = &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: v}
-		}
-
-		entry := &resp.RespValue{
-			DataType: resp.TypeArrays,
-			Array: []*resp.RespValue{
-				{DataType: resp.TypeBulkStrings, BulkStr: result.Id}, // stream Id
-				{DataType: resp.TypeArrays, Array: values},           // field and values
-			},
-		}
-		resps[i] = entry
-	}
-	return &resp.RespValue{DataType: resp.TypeArrays, Array: resps}, nil
+	e.generateXRangeCmdReplyEvent(c, searchResults)
 }
 
 /*
-Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key id [id...]
+Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key id  TODO: support multiple keys
 Reply:
   - Array reply: a list of stream entries with IDs matching the specified range
 */
+func (e StreamCmdExecutor) executeXReadCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	var (
+		count int
+		block int = -1
+		key   string
+		id    string
+	)
 
-func (e StreamCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+	// Loop up the stream at key
+	stream, found := db.StreamStore[key]
+	if !found {
+		return &resp.RespValue{DataType: resp.TypeArrays, Array: []*resp.RespValue{}}, nil
+	}
+
+	searchResults := stream.Radix.SearchByRange(id, ":", count)
+	if len(searchResults) == 0 && block != -1 {
+		// Block the client
+	}
+
+	return nil, nil
+}
+
+func (e StreamCmdExecutor) Execute(c *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
 	switch cmdName {
 	case "XADD":
-		return e.executeXAddCmd(cmdArgs)
+		e.executeXAddCmd(c, cmdArgs)
 	case "XRANGE":
-		return e.executeXRange(cmdArgs)
+		e.executeXRangeCmd(c, cmdArgs)
+	case "XREAD":
+		e.executeXReadCmd(c, cmdArgs)
 	}
-	return nil, nil
 }

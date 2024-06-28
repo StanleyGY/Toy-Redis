@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -12,54 +13,57 @@ var (
 	ErrOverflow    = errors.New("overflow")
 )
 
-type CmdExecutor interface {
-	Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error)
-}
-
-var CmdLookupTable = map[string]CmdExecutor{
-	"COMMAND":       &PingCmdExecutor{},
-	"PING":          &PingCmdExecutor{},
-	"ECHO":          &EchoCmdExecutor{},
-	"SET":           &SetCmdExecutor{},
-	"GET":           &SetCmdExecutor{},
-	"ZADD":          &ZsetCmdExecutor{},
-	"ZREM":          &ZsetCmdExecutor{},
-	"ZSCORE":        &ZsetCmdExecutor{},
-	"ZCOUNT":        &ZsetCmdExecutor{},
-	"ZRANGEBYSCORE": &ZsetCmdExecutor{},
-	"ZRANK":         &ZsetCmdExecutor{},
-	"ZRANGE":        &ZsetCmdExecutor{},
+var CmdLookupTable = map[string]cmdExecutor{
+	"COMMAND":       &pingCmdExecutor{},
+	"PING":          &pingCmdExecutor{},
+	"ECHO":          &echoCmdExecutor{},
+	"SET":           &setCmdExecutor{},
+	"GET":           &setCmdExecutor{},
+	"ZADD":          &zsetCmdExecutor{},
+	"ZREM":          &zsetCmdExecutor{},
+	"ZSCORE":        &zsetCmdExecutor{},
+	"ZCOUNT":        &zsetCmdExecutor{},
+	"ZRANGEBYSCORE": &zsetCmdExecutor{},
+	"ZRANK":         &zsetCmdExecutor{},
+	"ZRANGE":        &zsetCmdExecutor{},
 	"XADD":          &StreamCmdExecutor{},
 	"XRANGE":        &StreamCmdExecutor{},
+	"XREAD":         &StreamCmdExecutor{},
 }
 
-func Execute(val *resp.RespValue) (*resp.RespValue, error) {
+func Execute(c *event.ClientInfo, val *resp.RespValue) {
 	cmdName := strings.ToUpper(val.Array[0].BulkStr)
 	cmd := CmdLookupTable[cmdName]
 	if cmd == nil {
-		return nil, errors.New("failed to look up command")
+		event.AddErrorReplyEvent(c, errors.New("failed to look up command"))
+		return
 	}
 	cmdArgs := val.Array[1:]
-	return cmd.Execute(cmdName, cmdArgs)
+	cmd.Execute(c, cmdName, cmdArgs)
+}
+
+type cmdExecutor interface {
+	Execute(client *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue)
 }
 
 /*
  * syntax: PING
  */
-type PingCmdExecutor struct{}
+type pingCmdExecutor struct{}
 
-func (PingCmdExecutor) Execute(_ string, _ []*resp.RespValue) (*resp.RespValue, error) {
-	return &resp.RespValue{DataType: resp.TypeSimpleStrings, SimpleStr: "PONG"}, nil
+func (pingCmdExecutor) Execute(c *event.ClientInfo, _ string, _ []*resp.RespValue) {
+	event.AddSimpleStringReplyEvent(c, "PONG")
 }
 
 /*
  * syntax: ECHO message
  */
-type EchoCmdExecutor struct{}
+type echoCmdExecutor struct{}
 
-func (EchoCmdExecutor) Execute(_ string, args []*resp.RespValue) (*resp.RespValue, error) {
+func (echoCmdExecutor) Execute(c *event.ClientInfo, _ string, args []*resp.RespValue) {
 	if len(args) == 0 {
-		return nil, ErrInvalidArgs
+		event.AddErrorReplyEvent(c, ErrInvalidArgs)
+	} else {
+		event.AddBulkStringReplyEvent(c, "PONG")
 	}
-	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: args[0].BulkStr}, nil
 }

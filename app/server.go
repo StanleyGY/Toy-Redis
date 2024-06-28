@@ -4,8 +4,8 @@ import (
 	"log"
 
 	"github.com/stanleygy/toy-redis/app/cmdexec"
+	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/parser"
-	"github.com/stanleygy/toy-redis/app/resp"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,36 +82,22 @@ func processConnReadRequest(connfd int, epoller *Epoller) {
 		return
 	}
 
-	var outResp *resp.RespValue
-
-	inResp, err := parser.Parse(buf)
-	if err != nil {
-		outResp = resp.MakeErorr(err.Error())
-		log.Println("Error parsing Resp: ", err.Error())
-		goto netwrite
+	c := &event.ClientInfo{
+		ConnFd: connfd,
 	}
-
-	outResp, err = cmdexec.Execute(inResp)
-	if err != nil {
-		outResp = resp.MakeErorr(err.Error())
-		log.Println("Error executing Resp: ", err.Error())
-		goto netwrite
-	}
-
-netwrite:
-	_, err = unix.Write(connfd, outResp.ToByteArray())
-	if err != nil {
-		log.Println("Error writing Resp: ", err.Error())
-	}
+	clientRequest := parser.Parse(buf)
+	cmdexec.Execute(c, clientRequest)
 }
 
 func startServer() {
 	epoller := initListeners()
 	cmdexec.InitRedisDb()
 
-	// Listen for connection establishing events and other requests
 	for {
-		events, err := epoller.GetEvents()
+		cmdexec.HandleBlockedClientsTimeout()
+
+		// Listen for connection establishing events and other requests
+		events, err := epoller.GetEvents(-1)
 		if err != nil {
 			log.Println("Error epoller waiting for events: ", err.Error())
 			continue
@@ -123,6 +109,20 @@ func startServer() {
 				processConnReadRequest(int(ev.Fd), epoller)
 			}
 		}
+
+		// Process events
+		for _, ev := range event.EventBus {
+			switch ev.Type {
+			case event.EventReplyToClient:
+				_, err = unix.Write(ev.Client.ConnFd, ev.Resp.ToByteArray())
+				if err != nil {
+					log.Println("Error writing Resp: ", err.Error())
+				}
+			case event.EventKeySpaceNotify:
+				// Notify clients waiting on key space events
+			}
+		}
+		event.Reset()
 	}
 }
 

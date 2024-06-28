@@ -5,15 +5,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stanleygy/toy-redis/app/event"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
 /*
  * syntax: SET key value [NX] [EX seconds | PX milliseconds]
  */
-type SetCmdExecutor struct{}
+type setCmdExecutor struct{}
 
-func (e SetCmdExecutor) parseSetCmdArgs(args []*resp.RespValue, key *string, val *string, nxFlag *bool, expiry *bool, ttl *time.Time) error {
+func (e setCmdExecutor) parseSetCmdArgs(args []*resp.RespValue, key *string, val *string, nxFlag *bool, expiry *bool, ttl *time.Time) error {
 	*key = args[0].BulkStr
 	*val = args[1].BulkStr
 
@@ -46,7 +47,7 @@ func (e SetCmdExecutor) parseSetCmdArgs(args []*resp.RespValue, key *string, val
 	return nil
 }
 
-func (e SetCmdExecutor) doesKeyExistOrUnexpire(key string) bool {
+func (e setCmdExecutor) doesKeyExistOrUnexpire(key string) bool {
 	val, found := db.DictStore[key]
 	if found && val.WillExpire && val.ExpireTime.Compare(time.Now()) == -1 {
 		delete(db.DictStore, key)
@@ -55,7 +56,7 @@ func (e SetCmdExecutor) doesKeyExistOrUnexpire(key string) bool {
 	return found
 }
 
-func (e SetCmdExecutor) set(key string, val string, nxFlag bool, expiry bool, ttl time.Time) bool {
+func (e setCmdExecutor) set(key string, val string, nxFlag bool, expiry bool, ttl time.Time) bool {
 	if nxFlag && e.doesKeyExistOrUnexpire(key) {
 		return false
 	}
@@ -70,7 +71,7 @@ func (e SetCmdExecutor) set(key string, val string, nxFlag bool, expiry bool, tt
 	return true
 }
 
-func (e SetCmdExecutor) executeSetCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+func (e setCmdExecutor) executeSetCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
 		key    string
 		val    string
@@ -79,25 +80,28 @@ func (e SetCmdExecutor) executeSetCmd(cmdArgs []*resp.RespValue) (*resp.RespValu
 		ttl    time.Time
 	)
 	e.parseSetCmdArgs(cmdArgs, &key, &val, &nxFlag, &expiry, &ttl)
-	if e.set(key, val, nxFlag, expiry, ttl) {
-		return &resp.RespValue{DataType: resp.TypeSimpleStrings, SimpleStr: "OK"}, nil
+	if !e.set(key, val, nxFlag, expiry, ttl) {
+		event.AddNullBulkStringReplyEvent(c)
+		return
 	}
-	return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+	event.AddSimpleStringReplyEvent(c, "OK")
 }
 
-func (e SetCmdExecutor) executeGetCmd(cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
+func (e setCmdExecutor) executeGetCmd(c *event.ClientInfo, cmdArgs []*resp.RespValue) {
 	key := cmdArgs[0].BulkStr
 	if !e.doesKeyExistOrUnexpire(key) {
-		return &resp.RespValue{DataType: resp.TypeBulkStrings, IsNullBulkStr: true}, nil
+		event.AddNullBulkStringReplyEvent(c)
+		return
 	}
 	val := db.DictStore[key]
-	return &resp.RespValue{DataType: resp.TypeBulkStrings, BulkStr: val.Value}, nil
+	event.AddBulkStringReplyEvent(c, val.Value)
 }
 
-func (e SetCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
-	if cmdName == "SET" {
-		return e.executeSetCmd(cmdArgs)
-	} else {
-		return e.executeGetCmd(cmdArgs)
+func (e setCmdExecutor) Execute(c *event.ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
+	switch cmdName {
+	case "SET":
+		e.executeSetCmd(c, cmdArgs)
+	case "GET":
+		e.executeGetCmd(c, cmdArgs)
 	}
 }
