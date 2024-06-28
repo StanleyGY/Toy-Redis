@@ -5,6 +5,11 @@ import (
 	"sort"
 )
 
+type SearchResult struct {
+	Node *RaxNode
+	Id   string
+}
+
 type RaxNodeEdge struct {
 	Label    byte   // Used for quickly checking if a node splitting should occur
 	Prefix   string // The actual prefix associated with the edge
@@ -15,8 +20,8 @@ type RaxNode struct {
 	From     *RaxNode
 	FromEdge *RaxNodeEdge
 
-	Edges    []*RaxNodeEdge
-	HasValue bool
+	Edges  []*RaxNodeEdge
+	Values []string
 }
 
 func (n *RaxNode) GetEdge(prefix string) *RaxNodeEdge {
@@ -68,14 +73,14 @@ func (n *RaxNode) AddEdge(prefix string, destNode *RaxNode) {
 }
 
 func (n *RaxNode) Consolidate() {
-	if len(n.Edges) != 1 || n.HasValue {
+	if len(n.Edges) != 1 || n.Values != nil {
 		return
 	}
 
 	// Consolidate current node with my only child node
 	child := n.Edges[0].DestNode
 	n.Edges = child.Edges
-	n.HasValue = child.HasValue
+	n.Values = child.Values
 	n.FromEdge.Prefix = n.FromEdge.Prefix + child.FromEdge.Prefix
 
 	for _, edge := range child.Edges {
@@ -83,16 +88,16 @@ func (n *RaxNode) Consolidate() {
 	}
 }
 
-type Radix struct {
+type RadixTree struct {
 	Head     *RaxNode
 	NumElems int
 }
 
-func MakeRadix() *Radix {
-	return &Radix{
+func MakeRadixTree() *RadixTree {
+	return &RadixTree{
 		Head: &RaxNode{
-			Edges:    make([]*RaxNodeEdge, 0),
-			HasValue: false,
+			Edges:  make([]*RaxNodeEdge, 0),
+			Values: nil,
 		},
 		NumElems: 0,
 	}
@@ -108,47 +113,96 @@ func getLongestCommonPrefix(s1, s2 string) int {
 	return idx - 1
 }
 
-func (r *Radix) Search(text string) bool {
-	curr := r.Head
-	for len(text) > 0 {
-		edge := curr.GetEdge(text)
-		if edge == nil {
-			return false
-		}
-
-		commonPrefixIdx := getLongestCommonPrefix(edge.Prefix, text)
-		if commonPrefixIdx+1 < len(edge.Prefix) {
-			return false
-		}
-
-		text = text[commonPrefixIdx+1:]
-		curr = edge.DestNode
+func (r *RadixTree) searchByRange(startId string, endId string, limit int, curr *RaxNode, currPrefix string, results *[]*SearchResult) {
+	if curr == nil {
+		return
 	}
-	return curr.HasValue
+
+	if curr.Values != nil {
+		*results = append(*results, &SearchResult{
+			Id:   currPrefix,
+			Node: curr,
+		})
+	}
+	if len(*results) >= limit {
+		return
+	}
+
+	for _, edge := range curr.Edges {
+		var (
+			startIdPrefix string = startId
+			endIdPrefix   string = endId
+		)
+		nextPrefix := currPrefix + edge.Prefix
+		if len(nextPrefix) < len(startId) {
+			startIdPrefix = startId[:len(nextPrefix)]
+		}
+		if len(nextPrefix) < len(endId) {
+			endIdPrefix = endId[:len(nextPrefix)]
+		}
+
+		if nextPrefix < startIdPrefix {
+			continue
+		}
+		if nextPrefix > endIdPrefix {
+			break
+		}
+		r.searchByRange(startId, endId, limit, edge.DestNode, nextPrefix, results)
+	}
 }
 
-func (r *Radix) Remove(text string) bool {
+func (r *RadixTree) SearchByRange(startId string, endId string, limit int) []*SearchResult {
+	// Search range is inclusive at both ends
+	var results []*SearchResult
+	r.searchByRange(startId, endId, limit, r.Head, "", &results)
+	return results
+}
+
+func (r *RadixTree) Search(id string) []string {
 	curr := r.Head
-	for len(text) > 0 {
-		edge := curr.GetEdge(text)
+	for len(id) > 0 {
+		edge := curr.GetEdge(id)
+		if edge == nil {
+			return nil
+		}
+
+		commonPrefixIdx := getLongestCommonPrefix(edge.Prefix, id)
+		if commonPrefixIdx+1 < len(edge.Prefix) {
+			return nil
+		}
+
+		id = id[commonPrefixIdx+1:]
+		curr = edge.DestNode
+	}
+	if curr.Values == nil {
+		return nil
+	}
+	return curr.Values
+}
+
+func (r *RadixTree) Remove(id string) bool {
+	curr := r.Head
+	for len(id) > 0 {
+		edge := curr.GetEdge(id)
 
 		if edge == nil {
 			return false
 		}
 
-		commonPrefixIdx := getLongestCommonPrefix(edge.Prefix, text)
+		commonPrefixIdx := getLongestCommonPrefix(edge.Prefix, id)
 		if commonPrefixIdx+1 < len(edge.Prefix) {
 			return false
 		}
 
-		text = text[commonPrefixIdx+1:]
+		id = id[commonPrefixIdx+1:]
 		curr = edge.DestNode
 	}
-	if !curr.HasValue {
+	if curr.Values == nil {
+		// Nothing to remove if this not a value node
 		return false
 	}
 
-	curr.HasValue = false
+	curr.Values = nil
 
 	if len(curr.Edges) == 1 && curr.From != nil {
 		// If curr node has only one edge, consolidate with its child
@@ -159,18 +213,18 @@ func (r *Radix) Remove(text string) bool {
 		prev.DeleteEdge(curr.FromEdge.Prefix)
 
 		// If parent node is a non-value node and has only one edge, consolidate with its child.
-		// The invariant is that no two non-value nodes can be neighbors if each of them only has one edge
-		if len(prev.Edges) == 1 && !prev.HasValue && prev.From != nil {
+		// The invariant is that no two non-value nodes can be neighbors if both of them has at most one edge.
+		if len(prev.Edges) == 1 && prev.Values == nil && prev.From != nil {
 			prev.Consolidate()
 		}
 	}
 	return true
 }
 
-func (r *Radix) Insert(text string) bool {
+func (r *RadixTree) Insert(id string, values []string) bool {
 	curr := r.Head
 	for {
-		edge := curr.GetEdge(text)
+		edge := curr.GetEdge(id)
 
 		/*
 			If this node `curr` doesn't have any edge that matches any character of `searchedPrefix`.
@@ -185,25 +239,26 @@ func (r *Radix) Insert(text string) bool {
 							 D - [*]
 		*/
 		if edge == nil {
-			curr.AddEdge(text, &RaxNode{HasValue: true})
+			curr.AddEdge(id, &RaxNode{Values: values})
 			r.NumElems++
 			return true
 		}
 
-		commonPrefixIdx := getLongestCommonPrefix(text, edge.Prefix)
-		commonPrefix := text[:commonPrefixIdx+1]
+		commonPrefixIdx := getLongestCommonPrefix(id, edge.Prefix)
+		commonPrefix := id[:commonPrefixIdx+1]
 
 		if commonPrefixIdx+1 == len(edge.Prefix) {
 			// If the prefix fully matches and exhausts this edge's prefix
-			text = text[commonPrefixIdx+1:]
+			id = id[commonPrefixIdx+1:]
 
 			// If prefix to search is exhausted
-			if len(text) == 0 {
-				if curr.HasValue {
+			if len(id) == 0 {
+				if curr.Values != nil {
+					curr.Values = values
 					return false
 				}
 
-				curr.HasValue = true
+				curr.Values = values
 				r.NumElems++
 				return true
 			}
@@ -239,9 +294,9 @@ func (r *Radix) Insert(text string) bool {
 					         \
 					          * - EF - [*]
 		*/
-		if commonPrefixIdx+1 == len(text) && commonPrefixIdx+1 < len(edge.Prefix) {
+		if commonPrefixIdx+1 == len(id) && commonPrefixIdx+1 < len(edge.Prefix) {
 			// Handle case 2
-			newNode := &RaxNode{HasValue: true}
+			newNode := &RaxNode{Values: values}
 			newNode.AddEdge(edge.Prefix[commonPrefixIdx+1:], edge.DestNode)
 			curr.DeleteEdge(edge.Prefix)
 			curr.AddEdge(commonPrefix, newNode)
@@ -252,10 +307,7 @@ func (r *Radix) Insert(text string) bool {
 		// Handle case 1
 		splitNode := &RaxNode{}
 		splitNode.AddEdge(edge.Prefix[commonPrefixIdx+1:], edge.DestNode)
-		splitNode.AddEdge(text[commonPrefixIdx+1:], &RaxNode{
-			Edges:    nil,
-			HasValue: true,
-		})
+		splitNode.AddEdge(id[commonPrefixIdx+1:], &RaxNode{Values: values})
 		curr.DeleteEdge(edge.Prefix)
 		curr.AddEdge(commonPrefix, splitNode)
 		r.NumElems++
@@ -263,12 +315,12 @@ func (r *Radix) Insert(text string) bool {
 	}
 }
 
-func (r *Radix) visualizeDFS(n *RaxNode, level int) {
+func (r *RadixTree) visualizeDFS(n *RaxNode, level int) {
 	for _, edge := range n.Edges {
 		for i := 0; i < level; i++ {
 			fmt.Printf("  ")
 		}
-		if edge.DestNode.HasValue {
+		if edge.DestNode.Values != nil {
 			fmt.Printf("[%s]\n", edge.Prefix)
 		} else {
 			fmt.Println(edge.Prefix)
@@ -277,7 +329,7 @@ func (r *Radix) visualizeDFS(n *RaxNode, level int) {
 	}
 }
 
-func (r *Radix) Visualize() {
+func (r *RadixTree) Visualize() {
 	fmt.Println("=============== Visualize ===============")
 	r.visualizeDFS(r.Head, 0)
 	fmt.Println()

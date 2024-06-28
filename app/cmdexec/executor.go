@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrInvalidArgs = errors.New("invalid args")
+	ErrOverflow    = errors.New("overflow")
 )
 
 type CmdExecutor interface {
@@ -28,6 +29,8 @@ var CmdLookupTable = map[string]CmdExecutor{
 	"ZRANGEBYSCORE": &ZsetCmdExecutor{},
 	"ZRANK":         &ZsetCmdExecutor{},
 	"ZRANGE":        &ZsetCmdExecutor{},
+	"XADD":          &StreamCmdExecutor{},
+	"XRANGE":        &StreamCmdExecutor{},
 }
 
 func Execute(val *resp.RespValue) (*resp.RespValue, error) {
