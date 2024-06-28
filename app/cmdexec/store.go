@@ -3,6 +3,8 @@ package cmdexec
 import (
 	"fmt"
 	"time"
+
+	"github.com/stanleygy/toy-redis/app/algo"
 )
 
 type DictStoreValue struct {
@@ -21,13 +23,13 @@ func (s StreamID) ToString() string {
 }
 
 type Stream struct {
-	Radix  *RadixTree
+	Radix  *algo.RadixTree
 	LastId *StreamID
 }
 
 type RedisDb struct {
 	DictStore      map[string]*DictStoreValue
-	SortedSetStore map[string]*SkipList
+	SortedSetStore map[string]*algo.SkipList
 	StreamStore    map[string]*Stream
 }
 
@@ -36,7 +38,7 @@ var db *RedisDb
 func InitRedisDb() {
 	db = &RedisDb{
 		DictStore:      make(map[string]*DictStoreValue),
-		SortedSetStore: make(map[string]*SkipList),
+		SortedSetStore: make(map[string]*algo.SkipList),
 		StreamStore:    make(map[string]*Stream),
 	}
 }

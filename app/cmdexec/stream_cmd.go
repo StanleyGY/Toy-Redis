@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stanleygy/toy-redis/app/algo"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -74,7 +75,7 @@ func (e StreamCmdExecutor) executeXAddCmd(cmdArgs []*resp.RespValue) (*resp.Resp
 	if !found {
 		// If stream key does not exist, create one
 		stream = &Stream{
-			Radix: MakeRadixTree(),
+			Radix: algo.MakeRadixTree(),
 			LastId: &StreamID{
 				Ms:  0,
 				Seq: 0,
@@ -169,6 +170,12 @@ func (e StreamCmdExecutor) executeXRange(cmdArgs []*resp.RespValue) (*resp.RespV
 	}
 	return &resp.RespValue{DataType: resp.TypeArrays, Array: resps}, nil
 }
+
+/*
+Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key id [id...]
+Reply:
+  - Array reply: a list of stream entries with IDs matching the specified range
+*/
 
 func (e StreamCmdExecutor) Execute(cmdName string, cmdArgs []*resp.RespValue) (*resp.RespValue, error) {
 	switch cmdName {

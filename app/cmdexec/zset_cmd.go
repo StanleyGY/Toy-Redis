@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stanleygy/toy-redis/app/algo"
 	"github.com/stanleygy/toy-redis/app/resp"
 )
 
@@ -48,7 +49,7 @@ func (e ZsetCmdExecutor) executeZAddCmd(cmdArgs []*resp.RespValue) (*resp.RespVa
 	// If a new key is requested, a new skip list will be created
 	sortedSet, found := db.SortedSetStore[key]
 	if !found {
-		db.SortedSetStore[key] = MakeSkipList(time.Now().Unix())
+		db.SortedSetStore[key] = algo.MakeSkipList(time.Now().Unix())
 		sortedSet = db.SortedSetStore[key]
 	}
 
