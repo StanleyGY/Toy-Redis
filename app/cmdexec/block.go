@@ -23,6 +23,7 @@ type BlockKey struct {
 // many blocking clients.
 var clientsTimeoutTable *algo.RadixTree
 
+// but once a queue has a message, the client is removed
 var blockClients map[int]string
 var blockClientsOnKeySpace map[BlockKey][]*ClientInfo
 var pendingClients []*ClientInfo
@@ -90,23 +91,30 @@ func NotifyBlockedClientsOnKeySpace(bkey *BlockKey) {
 		return
 	}
 	// Remove clients from key space block list
-	pendingClients = append(pendingClients, keyBlockList...)
+	for _, c := range keyBlockList {
+		_, found := blockClients[c.ConnFd]
+		if found {
+			pendingClients = append(pendingClients, c)
+		}
+	}
 	delete(blockClientsOnKeySpace, *bkey)
 }
 
-func BlockClientForKey(c *ClientInfo, bkey *BlockKey, timeoutMs int) {
+func BlockClientForKeys(c *ClientInfo, bkeys []*BlockKey, timeoutMs int) {
 	// Make sure each client is blocked only once
 	_, found := blockClients[c.ConnFd]
 	if found {
 		return
 	}
 
-	// Add client to key space block list
-	_, found = blockClientsOnKeySpace[*bkey]
-	if !found {
-		blockClientsOnKeySpace[*bkey] = []*ClientInfo{}
+	// Add client to all key spaces' block list
+	for _, bkey := range bkeys {
+		_, found = blockClientsOnKeySpace[*bkey]
+		if !found {
+			blockClientsOnKeySpace[*bkey] = []*ClientInfo{}
+		}
+		blockClientsOnKeySpace[*bkey] = append(blockClientsOnKeySpace[*bkey], c)
 	}
-	blockClientsOnKeySpace[*bkey] = append(blockClientsOnKeySpace[*bkey], c)
 
 	// Add client to timeout table
 	timeoutId := strconv.FormatInt(time.Now().Add(time.Millisecond*time.Duration(timeoutMs)).UnixMilli(), 10)

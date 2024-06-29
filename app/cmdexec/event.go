@@ -55,6 +55,10 @@ func AddErrorReplyEvent(c *ClientInfo, err error) {
 	AddReplyEvent(c, resp.MakeErorr(err.Error()))
 }
 
+func AddEmptyArrayReplyEvent(c *ClientInfo) {
+	AddReplyEvent(c, &resp.RespValue{DataType: resp.TypeArrays, Array: []*resp.RespValue{}})
+}
+
 func AddArrayReplyEvent(c *ClientInfo, arr []*resp.RespValue) {
 	AddReplyEvent(c, &resp.RespValue{DataType: resp.TypeArrays, Array: arr})
 }

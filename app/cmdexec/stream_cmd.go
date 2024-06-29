@@ -1,7 +1,6 @@
 package cmdexec
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -182,18 +181,17 @@ func (e StreamCmdExecutor) executeXRangeCmd(c *ClientInfo, cmdArgs []*resp.RespV
 }
 
 /*
-Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key id  TODO: support multiple keys
+Syntax: XREAD [COUNT count] [BLOCK milliseconds] STREAMS key [key...] id [id...]
 Reply:
   - Array reply: a list of stream entries with IDs matching the specified range
 */
-func (e StreamCmdExecutor) parseXReadCmdArgs(cmdArgs []*resp.RespValue, count *int, timeout *int, key *string, id *string) error {
+func (e StreamCmdExecutor) parseXReadCmdArgs(cmdArgs []*resp.RespValue, count *int, timeout *int, keys *[]string, ids *[]string) error {
 	var err error
 	i := 0
 
-	// Process options
+	// Parse options
 	for ; i < len(cmdArgs) && cmdArgs[i].BulkStr != "STREAMS"; i++ {
 		option := strings.ToUpper(cmdArgs[i].BulkStr)
-
 		if option == "COUNT" || option == "BLOCK" {
 			if i+1 == len(cmdArgs) {
 				return ErrInvalidArgs
@@ -209,66 +207,79 @@ func (e StreamCmdExecutor) parseXReadCmdArgs(cmdArgs []*resp.RespValue, count *i
 			i++
 		}
 	}
-
-	if i+2 >= len(cmdArgs) {
+	if i >= len(cmdArgs) {
 		return ErrInvalidArgs
 	}
 
-	// Process key and id
-	*key = cmdArgs[i+1].BulkStr
-	*id = cmdArgs[i+2].BulkStr
-
+	// Parse keys and ids
+	i++
+	keysAndIds := make([]string, 0)
+	for ; i < len(cmdArgs); i++ {
+		keysAndIds = append(keysAndIds, cmdArgs[i].BulkStr)
+	}
+	if len(keysAndIds)%2 != 0 {
+		return ErrInvalidArgs
+	}
+	*keys = keysAndIds[:len(keysAndIds)/2]
+	*ids = keysAndIds[len(keysAndIds)/2:]
 	return nil
 }
 
 func (e StreamCmdExecutor) executeXReadCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
 	var (
-		count   int = math.MaxInt
-		timeout int = -1
-		key     string
-		startId string
+		count    int = math.MaxInt
+		timeout  int = -1
+		keys     []string
+		startIds []string
 	)
-	err := e.parseXReadCmdArgs(cmdArgs, &count, &timeout, &key, &startId)
+	err := e.parseXReadCmdArgs(cmdArgs, &count, &timeout, &keys, &startIds)
 	if err != nil {
 		AddErrorReplyEvent(c, err)
 		return
 	}
 
-	fmt.Println("XREAD: ", count, timeout, key, startId)
+	var searchResults []*algo.RadixSearchResult
+	for i := 0; i < len(keys); i++ {
+		key := keys[i]
+		startId := startIds[i]
 
-	// Loop up the stream at key
-	stream, found := db.StreamStore[key]
-	if !found {
-		AddArrayReplyEvent(c, []*resp.RespValue{})
-		return
-	}
+		// Loop up the stream at key
+		stream, found := db.StreamStore[key]
+		if !found {
+			AddEmptyArrayReplyEvent(c)
+			return
+		}
 
-	// The start id is exclusive, so incr the start id to make it inclusive for the search
-	sid, err := ParseStreamID(startId)
-	if err != nil {
-		AddErrorReplyEvent(c, err)
-		return
+		// The start id is exclusive, so incr the start id to make it inclusive for the search
+		sid, err := ParseStreamID(startId)
+		if err != nil {
+			AddErrorReplyEvent(c, err)
+			return
+		}
+		err = sid.Incr()
+		if err != nil {
+			AddErrorReplyEvent(c, err)
+			return
+		}
+		searchResults = append(searchResults, stream.Radix.SearchByRange(sid.ToString(), ":", count)...)
 	}
-	err = sid.Incr()
-	if err != nil {
-		AddErrorReplyEvent(c, err)
-		return
-	}
-
-	// Actually perform the search
-	searchResults := stream.Radix.SearchByRange(sid.ToString(), ":", count)
 
 	if len(searchResults) == 0 {
 		if timeout != -1 {
 			// If no results are returned, and client specify block option,
 			// Block the client until a key space occurs or client times out
-			BlockClientForKey(c, &BlockKey{Source: BlockOnStream, Key: key}, timeout)
+			var bkeys []*BlockKey
+			for _, key := range keys {
+				bkeys = append(bkeys, &BlockKey{Source: BlockOnStream, Key: key})
+			}
+			BlockClientForKeys(c, bkeys, timeout)
 		} else {
 			// Immediately reply to client
-			AddArrayReplyEvent(c, []*resp.RespValue{})
+			AddEmptyArrayReplyEvent(c)
 		}
 		return
 	}
+
 	UnblockClient(c)
 	e.generateSearchResultsReplyEvent(c, searchResults)
 }
