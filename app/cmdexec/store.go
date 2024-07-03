@@ -59,10 +59,16 @@ type Stream struct {
 	LastId *StreamID
 }
 
+type GeoStoreValue struct {
+	Coord algo.GeoCoord
+	Hash  string
+}
+
 type RedisDb struct {
 	DictStore      map[string]*DictStoreValue
 	SortedSetStore map[string]*algo.SkipList
 	StreamStore    map[string]*Stream
+	GeoStore       map[string]map[string]*GeoStoreValue
 }
 
 var db *RedisDb
@@ -72,5 +78,6 @@ func InitRedisDb() {
 		DictStore:      make(map[string]*DictStoreValue),
 		SortedSetStore: make(map[string]*algo.SkipList),
 		StreamStore:    make(map[string]*Stream),
+		GeoStore:       make(map[string]map[string]*GeoStoreValue),
 	}
 }

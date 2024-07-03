@@ -25,9 +25,12 @@ var CmdLookupTable = map[string]cmdExecutor{
 	"ZRANGEBYSCORE": &zsetCmdExecutor{},
 	"ZRANK":         &zsetCmdExecutor{},
 	"ZRANGE":        &zsetCmdExecutor{},
-	"XADD":          &StreamCmdExecutor{},
-	"XRANGE":        &StreamCmdExecutor{},
-	"XREAD":         &StreamCmdExecutor{},
+	"XADD":          &streamCmdExecutor{},
+	"XRANGE":        &streamCmdExecutor{},
+	"XREAD":         &streamCmdExecutor{},
+	"GEOADD":        &geoCmdExecutor{},
+	"GEODIST":       &geoCmdExecutor{},
+	"GEOHASH":       &geoCmdExecutor{},
 }
 
 func Execute(c *ClientInfo, val *resp.RespValue) {
