@@ -87,6 +87,10 @@ func MakeBulkString(msg string) *RespValue {
 	return &RespValue{DataType: TypeBulkStrings, BulkStr: msg}
 }
 
+func MakeNilBulkString() *RespValue {
+	return &RespValue{DataType: TypeBulkStrings, IsNullBulkStr: true}
+}
+
 func MakeErorr(msg string) *RespValue {
 	return &RespValue{DataType: TypeSimpleErrors, SimpleStr: msg}
 }

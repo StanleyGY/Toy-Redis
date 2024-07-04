@@ -1,9 +1,7 @@
 package algo
 
 import (
-	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -16,6 +14,21 @@ var (
 	geoEarthRadiusInMeters = 6371000.0
 )
 
+type GeoCoord struct {
+	Lat float64
+	Lon float64
+}
+
+func (c GeoCoord) AddDist(yOffset, xOffset float64) GeoCoord {
+	latDelta := yOffset / geoEarthRadiusInMeters * (180 / math.Pi)
+	lonDelta := xOffset / geoEarthRadiusInMeters * (360 / math.Pi)
+
+	return GeoCoord{
+		Lat: c.Lat + latDelta,
+		Lon: c.Lon + lonDelta,
+	}
+}
+
 type GeoBoundingBox struct {
 	MinLat float64
 	MaxLat float64
@@ -23,15 +36,20 @@ type GeoBoundingBox struct {
 	MaxLon float64
 }
 
-func (b *GeoBoundingBox) Center() (float64, float64) {
-	return (b.MinLat + b.MaxLat) / 2, (b.MinLon + b.MaxLon) / 2
+func (b GeoBoundingBox) Contains(c GeoCoord) bool {
+	return b.MinLat <= c.Lat && c.Lat <= b.MaxLat && b.MinLon <= c.Lon && c.Lon <= b.MaxLon
 }
 
-func (b *GeoBoundingBox) LatDelta() float64 {
+func (b GeoBoundingBox) Center() GeoCoord {
+	lat, lon := (b.MinLat+b.MaxLat)/2, (b.MinLon+b.MaxLon)/2
+	return GeoCoord{Lat: lat, Lon: lon}
+}
+
+func (b GeoBoundingBox) LatDelta() float64 {
 	return b.MaxLat - b.MinLat
 }
 
-func (b *GeoBoundingBox) LonDelta() float64 {
+func (b GeoBoundingBox) LonDelta() float64 {
 	return b.MaxLon - b.MinLon
 }
 
@@ -49,11 +67,6 @@ func MakeGeoBoundingBox(geoHash string) *GeoBoundingBox {
 		MinLon: center.Lon - lonRange/2,
 		MaxLon: center.Lon + lonRange/2,
 	}
-}
-
-type GeoCoord struct {
-	Lat float64
-	Lon float64
 }
 
 func geoBase32Decode(geoHash string) int64 {
@@ -109,7 +122,6 @@ func geoDecodeCoord(v int64, precision int) GeoCoord {
 				minLon = midLon
 			}
 		}
-		// fmt.Println(i, minLat, maxLat, " | ", minLon, maxLon)
 	}
 	midLat = (minLat + maxLat) / 2.0
 	midLon = (minLon + maxLon) / 2.0
@@ -152,7 +164,6 @@ func geoEncodeCoord(coord GeoCoord, precision int) int64 {
 				minLon = midLon
 			}
 		}
-		// fmt.Println(i, minLat, maxLat, " | ", minLon, maxLon)
 	}
 	return res
 }
@@ -163,7 +174,6 @@ func GeoHash(coord GeoCoord, precision int) string {
 		precision = GeoMaxPrecision
 	}
 	res := geoEncodeCoord(coord, precision)
-	fmt.Println("encode:", strconv.FormatInt(res, 2))
 	return geoBase32Encode(res, precision)
 }
 
@@ -180,35 +190,34 @@ func GeoHaversineDist(coordA GeoCoord, coordB GeoCoord) float64 {
 	return geoEarthRadiusInMeters * 2.0 * math.Asin(math.Sqrt(a))
 }
 
-// GeoGetNeighbors returns neighbors that correspond to the provided geohash
 func GeoGetNeighbors(geoHash string) []string {
 	// `geoHash` encodes a box of possible coordinates (aka. bounding box)
 	// The length of `geoHash` determines the precision
 	box := MakeGeoBoundingBox(geoHash)
 
-	lat, lon := box.Center()
+	center := box.Center()
 	latDelta := box.LatDelta()
 	lonDelta := box.LonDelta()
 	precision := len(geoHash)
 
 	return []string{
 		// North west
-		GeoHash(GeoCoord{Lat: lat + latDelta, Lon: lon - lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat + latDelta, Lon: center.Lon - lonDelta}, precision),
 		// North
-		GeoHash(GeoCoord{Lat: lat + latDelta, Lon: lon}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat + latDelta, Lon: center.Lon}, precision),
 		// North east
-		GeoHash(GeoCoord{Lat: lat + latDelta, Lon: lon + lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat + latDelta, Lon: center.Lon + lonDelta}, precision),
 
 		// West
-		GeoHash(GeoCoord{Lat: lat, Lon: lon - lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat, Lon: center.Lon - lonDelta}, precision),
 		// East
-		GeoHash(GeoCoord{Lat: lat, Lon: lon + lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat, Lon: center.Lon + lonDelta}, precision),
 
 		// South west
-		GeoHash(GeoCoord{Lat: lat - latDelta, Lon: lon - lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat - latDelta, Lon: center.Lon - lonDelta}, precision),
 		// South
-		GeoHash(GeoCoord{Lat: lat - latDelta, Lon: lon}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat - latDelta, Lon: center.Lon}, precision),
 		// South east
-		GeoHash(GeoCoord{Lat: lat - latDelta, Lon: lon + lonDelta}, precision),
+		GeoHash(GeoCoord{Lat: center.Lat - latDelta, Lon: center.Lon + lonDelta}, precision),
 	}
 }

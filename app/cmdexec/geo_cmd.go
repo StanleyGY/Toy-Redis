@@ -173,7 +173,7 @@ func (e geoCmdExecutor) executeGeoHashCmd(c *ClientInfo, cmdArgs []*resp.RespVal
 		if found {
 			res = append(res, resp.MakeBulkString(v.Hash))
 		} else {
-			res = append(res, nil)
+			res = append(res, resp.MakeNilBulkString())
 		}
 	}
 	AddArrayReplyEvent(c, res)
@@ -182,14 +182,61 @@ func (e geoCmdExecutor) executeGeoHashCmd(c *ClientInfo, cmdArgs []*resp.RespVal
 /*
 Syntax: GEORADIUS key longitude latitude radius
 */
-// func (e geoCmdExecutor) executeGeoRadius(c *ClientInfo) {
-// 	// var (
-// 	// 	key       string
-// 	// 	longitude float64
-// 	// 	latitude  float64
-// 	// 	radius    float64
-// 	// )
-// }
+func (e geoCmdExecutor) parseGeoRadiusCmdArgs(cmdArgs []*resp.RespValue, key *string, longitude *float64, latitude *float64, radius *float64) error {
+	if len(cmdArgs) < 4 {
+		return ErrInvalidArgs
+	}
+	var err error
+	*key = cmdArgs[0].BulkStr
+	*longitude, err = strconv.ParseFloat(cmdArgs[1].BulkStr, 64)
+	if err != nil {
+		return err
+	}
+	*latitude, err = strconv.ParseFloat(cmdArgs[2].BulkStr, 64)
+	if err != nil {
+		return err
+	}
+	*radius, err = strconv.ParseFloat(cmdArgs[3].BulkStr, 64)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e geoCmdExecutor) executeGeoRadiusCmd(c *ClientInfo, cmdArgs []*resp.RespValue) {
+	var (
+		key       string
+		longitude float64
+		latitude  float64
+		radius    float64
+	)
+	err := e.parseGeoRadiusCmdArgs(cmdArgs, &key, &longitude, &latitude, &radius)
+	if err != nil {
+		AddErrorReplyEvent(c, err)
+		return
+	}
+
+	// Look up store at key
+	store, found := db.GeoStore[key]
+	if !found {
+		AddEmptyArrayReplyEvent(c)
+		return
+	}
+
+	// This searching algorithm takes O(N^2) and unoptimized. Redis uses skip list to speed up
+	// the geospatial query.
+	originCoord := algo.GeoCoord{
+		Lat: latitude,
+		Lon: longitude,
+	}
+	var res []*resp.RespValue
+	for m, v := range store {
+		if algo.GeoHaversineDist(v.Coord, originCoord) < radius {
+			res = append(res, resp.MakeBulkString(m))
+		}
+	}
+	AddArrayReplyEvent(c, res)
+}
 
 func (e geoCmdExecutor) Execute(c *ClientInfo, cmdName string, cmdArgs []*resp.RespValue) {
 	switch cmdName {
@@ -199,5 +246,7 @@ func (e geoCmdExecutor) Execute(c *ClientInfo, cmdName string, cmdArgs []*resp.R
 		e.executeGeoDistCmd(c, cmdArgs)
 	case "GEOHASH":
 		e.executeGeoHashCmd(c, cmdArgs)
+	case "GEORADIUS":
+		e.executeGeoRadiusCmd(c, cmdArgs)
 	}
 }

@@ -31,6 +31,7 @@ var CmdLookupTable = map[string]cmdExecutor{
 	"GEOADD":        &geoCmdExecutor{},
 	"GEODIST":       &geoCmdExecutor{},
 	"GEOHASH":       &geoCmdExecutor{},
+	"GEORADIUS":     &geoCmdExecutor{},
 }
 
 func Execute(c *ClientInfo, val *resp.RespValue) {
